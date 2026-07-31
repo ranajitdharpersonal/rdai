@@ -1,0 +1,5 @@
+strategy: smart
+provider_order:
+- gemini
+- openai
+- groq
