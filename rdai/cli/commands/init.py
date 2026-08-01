@@ -20,7 +20,7 @@ INIT_CONTENT = r"""[bold cyan]
 ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝[/bold cyan]
 
 [bold yellow]⚙️  SYSTEM INITIALIZATION SEQUENCE[/bold yellow]
-[bold white]Version: v1.0.0[/bold white]
+[bold white]Version: v1.0.1[/bold white]
 
 [dim]────────────────────────────────────────────────────────[/dim]
 [bold yellow]👑 Created by :[/bold yellow] [bold white]Ranajit Dhar[/bold white]

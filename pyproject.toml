@@ -4,15 +4,19 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rdai"
-version = "1.0.0"
+version = "1.0.1"
 description = "One interface for resilient, multi-provider AI generation."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [
-  { name = "Ranajit Dhar" },
+  { name = "Ranajit Dhar", email = "contact@ranajitdhar.in" },
 ]
-keywords = ["ai", "llm", "cli", "failover", "gemini", "groq", "openai"]
+keywords = [
+  "ai", "llm", "cli", "failover", "gemini", "groq", "openai",
+  "orchestrator", "multi-agent", "generative-ai", "claude", 
+  "vertex-ai", "ai-router", "load-balancing"
+]
 classifiers = [
   "Development Status :: 4 - Beta",
   "Intended Audience :: Developers",
@@ -46,9 +50,9 @@ dev = [
 rdai = "rdai.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/ranajitdhar/rdai"
-Repository = "https://github.com/ranajitdhar/rdai"
-Issues = "https://github.com/ranajitdhar/rdai/issues"
+Homepage = "https://ranajitdhar.in"
+Repository = "https://github.com/ranajitdharpersonal/rdai"
+Issues = "https://github.com/ranajitdharpersonal/rdai/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["rdai"]
@@ -63,4 +67,3 @@ line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-

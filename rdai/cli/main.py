@@ -1,5 +1,4 @@
 import typer
-import time
 from rich.console import Console
 from rich.panel import Panel
 from rich.align import Align
@@ -46,22 +45,6 @@ LOGO_CONTENT = r"""[bold cyan]
 def main_callback(ctx: typer.Context):
     if ctx.invoked_subcommand is None:
         
-        # 🎬 ANIMATION PHASE
-        console.print()
-        animation_frames = [
-            "                           [bold bright_cyan]●[/bold bright_cyan]",
-            "\n                        [bold bright_cyan]●──●[/bold bright_cyan]",
-            "\n                     [bold bright_cyan]●──●──●[/bold bright_cyan]",
-            "\n                  [bold bright_cyan]●──●──●──●[/bold bright_cyan]"
-        ]
-        
-        for frame in animation_frames:
-            console.print(frame)
-            time.sleep(0.3)
-            
-        time.sleep(0.4)
-        console.print("\n                 [bold green]🧠  Network Established[/bold green]\n")
-        time.sleep(0.5)
         
         # 📦 PANEL WITH BORDER
         panel = Panel(

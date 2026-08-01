@@ -13,7 +13,7 @@
 
 > **One Interface. Any AI. Unbreakable Auto-Failover.**
 
-**Version:** v1.0.0  
+**Version:** v1.0.1  
 **👑 Created by:** Ranajit Dhar  
 **🌐 Website:** [https://ranajitdhar.in](https://ranajitdhar.in)
 
