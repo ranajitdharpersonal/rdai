@@ -7,29 +7,48 @@
 ██║  ██║██████╔╝██║  ██║██║
 ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝
   </pre>
+
+  <h1>rdai — Multi-Brain AI Orchestrator</h1>
+  <p><b>One Python SDK. Any AI Provider. Zero Downtime.</b></p>
+  <p>Route requests across Gemini, OpenAI, Groq, Claude and more — with automatic failover, live health checks, and an interactive CLI.</p>
+
+  <p>
+    <a href="https://pypi.org/project/rdai/"><img src="https://img.shields.io/pypi/v/rdai?color=blue" alt="PyPI" /></a>
+    <a href="https://pypi.org/project/rdai/"><img src="https://img.shields.io/pypi/pyversions/rdai" alt="Python" /></a>
+    <a href="https://github.com/ranajitdharpersonal/rdai/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green" alt="MIT" /></a>
+    <a href="https://pypi.org/project/rdai/"><img src="https://img.shields.io/pypi/dm/rdai" alt="Downloads" /></a>
+    <a href="https://github.com/ranajitdharpersonal/rdai/stargazers"><img src="https://img.shields.io/github/stars/ranajitdharpersonal/rdai?style=social" alt="Stars" /></a>
+  </p>
+
+  <b>👑 Created by:</b> Ranajit Dhar &nbsp;|&nbsp; 🌐 <a href="https://ranajitdhar.in">ranajitdhar.in</a> &nbsp;|&nbsp; 📦 <a href="https://pypi.org/project/rdai/">PyPI</a> &nbsp;|&nbsp; <b>Version:</b> v1.0.1
 </div>
-
-# 🚀 rdai (Ranajit Dhar AI) - Multi-Brain AI Orchestrator
-
-> **One Interface. Any AI. Unbreakable Auto-Failover.**
-
-**Version:** v1.0.1  
-**👑 Created by:** Ranajit Dhar  
-**🌐 Website:** [https://ranajitdhar.in](https://ranajitdhar.in)
-
-`rdai` is a Quantum-Ready, Self-Healing AI Operating System and Python SDK. It allows you to call multiple AI models (Gemini, OpenAI, Claude, DeepSeek, and more) through one single, unified interface. It automatically discovers your API keys, selects the best provider based on your strategy, and features a limitless **Circuit Breaker** that silently auto-failovers to a backup provider when rate limits, crashes, or timeouts occur. 
-
-Zero downtime. 100% Reliability.
 
 ---
 
-## ✨ Key Features
+## ⚡ The Problem
 
-*   🧠 **11+ Built-in AI Brains:** Native support for Gemini, OpenAI, Groq, Claude, DeepSeek, Qwen, Llama, Mistral, VertexAI, AWS Bedrock, and HuggingFace.
-*   ⚡ **Unbreakable Auto-Failover:** If your primary model crashes or hits a rate limit, the system instantly and silently routes the prompt to the next available model.
-*   🛠️ **Bring-Your-Own-Model (BYOM):** Inject any custom/private AI API into the failover chain without changing the core framework.
-*   🩺 **Live Ping Diagnostics:** The built-in CLI doctor actually pings the AI servers to report real-time ALIVE/ERROR status and latency.
-*   🪄 **Smart Auto-Setup:** Automatically installs missing required SDKs in the background during initialization. Prevents accidental configuration overwrites.
+```
+One provider fails (rate limit / crash / timeout)
+                ↓
+   rdai automatically switches to the next
+                ↓
+        Your app never goes down
+```
+
+`rdai` is a self-healing Python SDK that lets you call multiple AI models — Gemini, OpenAI, Claude, DeepSeek, and more — through **one unified interface**. It auto-discovers your API keys, picks the best provider for your strategy, and silently fails over to a backup the moment something breaks.
+
+---
+
+## 🩺 See it in action — `rdai doctor`
+
+The built-in doctor pings every configured provider live and reports real status, not guesses.
+
+<!-- Crop the screenshot to just the diagnostics table (no terminal chrome/prompt) and drop it here: -->
+![rdai doctor output](./assets/doctor-screenshot.png)
+
+**Real provider diagnostics — live authentication, reachability, and latency in one command.**
+
+One command tells you exactly which providers are wired up, authenticated, and reachable — before you ship.
 
 ---
 
@@ -37,56 +56,48 @@ Zero downtime. 100% Reliability.
 
 ```bash
 pip install rdai
-# Or if using local source: pip install -r requirements.txt
 ```
----
-## 🚦 Quick Start (The CLI Wizard)
 
-`rdai` comes with a powerful CLI dashboard. To configure your multi-brain environment, simply run:
+## 🚦 Quick Start
 
 ```bash
-rdai init
+rdai init          # interactive wizard → choose providers, strategy, generate .env + rdai.yaml
+# add your API keys to the generated .env file
+rdai doctor         # verify every provider is alive
 ```
-
-This interactive wizard will let you select your AI providers, define your failover strategy, auto-install missing packages, and generate your `.env` and `rdai.yaml` files.  
-
-Next, add your API keys to the generated `.env` file:Code snippet
 
 ```env
 GEMINI_API_KEY=your_key_here
 GROQ_API_KEY=your_key_here
 OPENAI_API_KEY=your_key_here
-# Add others as selected...
+# add others as selected...
 ```
-**(Note: Your API keys are kept strictly local and secure. They are never hardcoded.)**
 
-Finally, verify your setup with the live diagnostic tool:
-
-```bash
-rdai doctor
-```
-The doctor will scan your `.env` file, ping the AI networks, and show you the real-time latency and health of your failover chain.
+**(Your API keys stay strictly local — never hardcoded, never sent anywhere but the provider you're calling.)**
 
 ---
 
-## 💻 Python SDK Usage (Writing Code)
+## 💻 Python SDK Usage
 
-Using the SDK is incredibly simple. You don't need to learn 10 different SDKs; rdai standardizes everything.
+No need to learn ten different SDKs — `rdai` standardizes everything into one call.
 
 ```python
 from rdai import AI
 
-# Initialize the AI Engine. It automatically loads your rdai.yaml strategy.
-ai = AI()
+ai = AI()  # auto-loads your rdai.yaml strategy
 
-# Send a prompt. If the first model fails, it silently falls back to the next!
 response = ai.generate("Write a multi-agent orchestration script in Python.")
 print(response)
+# Hello! Here's your answer...
 ```
 
-# Bring Your Own Model (BYOM)
+If the first model fails, `rdai` silently falls back to the next one in your chain — no extra code required.
 
-Want to use a custom API? Inject it directly into the engine:
+---
+
+## 🛠️ Bring Your Own Model (BYOM)
+
+Plug a custom or private API straight into the failover chain:
 
 ```python
 from rdai.providers.base import BaseProvider
@@ -96,21 +107,37 @@ import requests
 class CustomNexusProvider(BaseProvider):
     def __init__(self, api_key):
         super().__init__(api_key, "nexus-v1")
-        
+
     def generate(self, prompt: str, **kwargs) -> str:
-        res = requests.post("[https://api.nexus.com/v1](https://api.nexus.com/v1)", headers={"Key": self.api_key}, json={"text": prompt})
+        res = requests.post(
+            "https://api.nexus.com/v1",
+            headers={"Key": self.api_key},
+            json={"text": prompt},
+        )
         return res.json()["reply"]
 
-# Inject your custom engine into the failover chain!
 ai = AI(providers=[CustomNexusProvider(api_key="your_custom_key")])
 print(ai.generate("Hello Custom Engine!"))
 ```
 
 ---
 
+## ✨ Why rdai?
+
+| | |
+|---|---|
+| ✔ **Interactive CLI** | Guided setup wizard, zero config-file hand-editing |
+| ✔ **Live Doctor** | Real pings, real latency, real status — not assumptions |
+| ✔ **Smart Routing** | Picks the best-fit provider per request |
+| ✔ **Automatic Failover** | Rate limits and crashes handled silently |
+| ✔ **Provider Agnostic** | 11+ built-in brains, plus BYOM for anything else |
+| ✔ **Zero Hardcoding** | Keys stay in your `.env`, never in code |
+
+---
+
 ## ⚙️ Routing Strategies & Configuration
 
-`rdai` reads your setup from an optional `rdai.yaml` file in the current directory. Environment variables take precedence over values in `.env`
+`rdai` reads its setup from an optional `rdai.yaml` in your working directory. Environment variables always take precedence over `.env` values.
 
 ```yaml
 strategy: smart
@@ -120,20 +147,16 @@ provider_order:
   - groq
 ```
 
----
+- **`smart`** — selects the ready provider that best fits the specific request.
+- **`manual`** — strictly follows the `provider_order` you define.
 
-### 🧠 Routing Strategies
-
-*   **`smart`**: Selects a ready provider whose traits best fit the specific request.
-*   **`manual`**: Strictly follows the exact `provider_order` defined in your `rdai.yaml`.
-
-> **Note:** Both strategies retain the remaining ready providers as automatic fallbacks for transient rate-limit and timeout failures.
+> Both strategies keep every other ready provider on standby as automatic fallback for transient rate-limit or timeout failures.
 
 ---
 
-## 🎛️ Supported AI Engines & Environment Keys
+## 🎛️ Supported AI Engines
 
-| Provider Engine | Environment Variable | Backend Logic |
+| Provider | Environment Variable | Backend Logic |
 | :--- | :--- | :--- |
 | **Gemini** | `GEMINI_API_KEY` | Modern `google.genai` SDK |
 | **OpenAI** | `OPENAI_API_KEY` | Official `openai` SDK |
@@ -143,23 +166,60 @@ provider_order:
 | **AWS Bedrock** | `AWS_BEDROCK_API_KEY` | AWS `boto3` SDK |
 | **DeepSeek** | `DEEPSEEK_API_KEY` | Direct DeepSeek REST API |
 | **Qwen** | `QWEN_API_KEY` | Alibaba DashScope REST API |
-| **Llama** | `LLAMA_API_KEY` | Universal OpenAI-Compatible API |
+| **Llama** | `LLAMA_API_KEY` | Universal OpenAI-compatible API |
 | **Mistral** | `MISTRAL_API_KEY` | Direct Mistral REST API |
 | **HuggingFace** | `HUGGINGFACE_API_KEY` | HF Serverless Inference API |
 
+---
+
+## 🛠️ CLI Command Reference
+
+| Command | Description |
+| :--- | :--- |
+| `rdai init` | Setup workspace, strategy, and providers |
+| `rdai doctor` | Live `.env` scan + API health check |
+| `rdai config` | View active routing strategy and failover chain |
+| `rdai benchmark` | Run a latency test across active models |
+| `rdai health` | Check overall internal system health |
+| `rdai about` | Learn about the orchestration architecture |
 
 ---
 
-## 🛠️ Complete CLI Command Reference
+## 🗺️ Roadmap
 
-*   `rdai init` - Setup your workspace, strategies, and AI providers.
-*   `rdai doctor` - Run a live `.env` network scan and API health check.
-*   `rdai config` - View your active routing strategy and failover chain.
-*   `rdai benchmark` - Run a latency test across your active models.
-*   `rdai health` - Check overall internal system health and readiness.
-*   `rdai about` - Learn about the master orchestration architecture.
+- ✅ **v1.0.0** — Multi-brain orchestrator core: Unbreakable Auto-Failover, Gemini/OpenAI/Claude/Groq + custom model support, `rdai init` setup wizard, `rdai doctor` live diagnostics
+- ✅ **v1.0.1** — Faster dashboard rendering (loading animation removed), expanded PyPI SEO keywords, corrected GitHub project URLs
+- 🟡 **v1.1** — Live streaming: brain activity, frontend events, provider timeline
+
+
+Full version history: [CHANGELOG.md](https://github.com/ranajitdharpersonal/rdai/blob/main/CHANGELOG.md)
 
 ---
+
+## 📂 More Examples
+
+Ready-to-run scripts covering failover, BYOM, and each provider live in [`/examples`](https://github.com/ranajitdharpersonal/rdai/tree/main/examples) — clone the repo and run them directly.
+
+```bash
+git clone https://github.com/ranajitdharpersonal/rdai.git
+cd rdai/examples
+python basic_usage.py
+```
+
+---
+
+## 🤝 Contributing
+
+Issues and PRs are welcome — check [open issues](https://github.com/ranajitdharpersonal/rdai/issues) or open a new one to discuss a change before submitting a PR.
+
+If `rdai` saved you from a 3am provider outage, a ⭐ on the repo goes a long way — it's the easiest way to help other developers discover it.
+
+---
+
 <div align="center">
   <i>Built with ❤️ for the next generation of unbreakable AI applications.</i>
+
+  <br /><br />
+
+  <a href="https://github.com/ranajitdharpersonal/rdai">⭐ Star this repo</a> · <a href="https://github.com/ranajitdharpersonal/rdai/issues">Report a bug</a> · <a href="https://pypi.org/project/rdai/">View on PyPI</a>
 </div>
