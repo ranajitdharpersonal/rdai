@@ -6,28 +6,28 @@ class AwsBedrockProvider(BaseProvider):
     traits = ["aws", "enterprise", "stable"]
 
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "anthropic.claude-3-haiku-20240307-v1:0"):
-        # AWS typically uses credentials from env (AWS_ACCESS_KEY_ID), 
-        # so api_key here can act as region_name or profile name if needed.
+        # AWS uses AWS_ACCESS_KEY_ID from env. 
+        # api_key here acts as region_name if provided via .env
         super().__init__(api_key, model)
 
     @property
     def is_available(self) -> bool:
-        # Override to just check if boto3 can be imported
+        # 🎯 FIX: Actually check for AWS credentials, not just library presence
         try:
             import boto3
-            return True
+            session = boto3.Session()
+            return session.get_credentials() is not None
         except ImportError:
             return False
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         if not self.is_available:
-            raise ImportError("Please install boto3 (pip install boto3) to use AWS Bedrock.")
+            raise ImportError("AWS Bedrock credentials missing or boto3 not installed.")
             
         import boto3
+        # Use api_key as region_name, fallback to us-east-1
         client = boto3.client("bedrock-runtime", region_name=self.api_key or "us-east-1")
         
-        # Structure varies slightly depending on which model family is used inside Bedrock.
-        # This example uses the Converse API which standardizes it.
         response = client.converse(
             modelId=self.model,
             messages=[{"role": "user", "content": [{"text": prompt}]}]

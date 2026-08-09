@@ -4,7 +4,8 @@ from rdai.providers.base import BaseProvider
 class GroqProvider(BaseProvider):
     traits = ["ultra-fast", "groq-lpu", "low-latency"]
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "llama-3.3-70b-versatile"):
+    # 🎯 FIX: Updated default model before the Aug 16 shutdown
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "llama3-70b-8192"):
         super().__init__(api_key, model)
 
     def generate(self, prompt: str, **kwargs: Any) -> str:

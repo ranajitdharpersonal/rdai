@@ -93,6 +93,21 @@ print(response)
 
 If the first model fails, `rdai` silently falls back to the next one in your chain — no extra code required.
 
+
+### 🎯 Overriding Default Models
+By default, `rdai` uses the most stable models for each provider (e.g., `gemini-2.5-pro`, `gpt-4o-mini`). However, you have full control to override them by passing a `models` dictionary:
+
+```python
+from rdai import AI
+
+# Override the defaults with your preferred models
+ai = AI(models={
+    "gemini": "gemini-1.5-flash",
+    "groq": "llama3-8b-8192"
+})
+
+response = ai.generate("Hello world!")
+
 ---
 
 ## 🛠️ Bring Your Own Model (BYOM)

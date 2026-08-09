@@ -23,7 +23,7 @@ INIT_CONTENT = r"""[bold cyan]
 
 [dim]────────────────────────────────────────────────────────[/dim]
 [bold yellow]👑 Created by :[/bold yellow] [bold white]Ranajit Dhar[/bold white]
-[bold yellow]🌐 Website    :[/bold yellow] [bold cyan]https://ranajitdhar.in[/bold cyan]
+[bold yellow]🌐 Website    :[/bold yellow] [bold cyan][https://ranajitdhar.in](https://ranajitdhar.in)[/bold cyan]
 [dim]────────────────────────────────────────────────────────[/dim]
 
 [bold white]Configure your Multi-Brain AI Orchestrator.[/bold white]
@@ -124,7 +124,10 @@ def setup_init():
             if "Custom" in p:
                 env_content += "\n# 🛠️ Bring Your Own Model Configuration\n"
                 env_content += "# CUSTOM_API_KEY=your_key_here\n"
-                env_content += "# CUSTOM_ENDPOINT=https://your-custom-ai.com/v1\n"
+                env_content += "# CUSTOM_ENDPOINT=[https://your-custom-ai.com/v1](https://your-custom-ai.com/v1)\n"
+            # 🎯 FIX: Explicitly handle VertexAI environment key naming
+            elif p.lower() == "vertexai":
+                env_content += "VERTEXAI_PROJECT_ID=\n"
             else:
                 env_content += f"{p.upper()}_API_KEY=\n"
         
