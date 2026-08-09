@@ -188,7 +188,7 @@ provider_order:
 ## 🗺️ Roadmap
 
 - ✅ **v1.0.0** — Multi-brain orchestrator core: Unbreakable Auto-Failover, Gemini/OpenAI/Claude/Groq + custom model support, `rdai init` setup wizard, `rdai doctor` live diagnostics
-- ✅ **v1.0.2** — Faster dashboard rendering (loading animation removed), expanded PyPI SEO keywords, corrected GitHub project URLs
+- ✅ **v1.0.1** — Faster dashboard rendering (loading animation removed), expanded PyPI SEO keywords, corrected GitHub project URLs
 - ✅ **v1.0.2** — Core architecture unified, missing dependencies resolved, explicit timeouts added for REST providers, and enhanced CLI doctor diagnostics.
 
 - 🟡 **v1.1** — Live streaming: brain activity, frontend events, provider timeline
