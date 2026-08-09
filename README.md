@@ -20,7 +20,7 @@
     <a href="https://github.com/ranajitdharpersonal/rdai/stargazers"><img src="https://img.shields.io/github/stars/ranajitdharpersonal/rdai?style=social" alt="Stars" /></a>
   </p>
 
-  <b>👑 Created by:</b> Ranajit Dhar &nbsp;|&nbsp; 🌐 <a href="https://ranajitdhar.in">ranajitdhar.in</a> &nbsp;|&nbsp; 📦 <a href="https://pypi.org/project/rdai/">PyPI</a> &nbsp;|&nbsp; <b>Version:</b> v1.0.1
+  <b>👑 Created by:</b> Ranajit Dhar &nbsp;|&nbsp; 🌐 <a href="https://ranajitdhar.in">ranajitdhar.in</a> &nbsp;|&nbsp; 📦 <a href="https://pypi.org/project/rdai/">PyPI</a> &nbsp;|&nbsp; <b>Version:</b> v1.0.2
 </div>
 
 ---
@@ -188,8 +188,11 @@ provider_order:
 ## 🗺️ Roadmap
 
 - ✅ **v1.0.0** — Multi-brain orchestrator core: Unbreakable Auto-Failover, Gemini/OpenAI/Claude/Groq + custom model support, `rdai init` setup wizard, `rdai doctor` live diagnostics
-- ✅ **v1.0.1** — Faster dashboard rendering (loading animation removed), expanded PyPI SEO keywords, corrected GitHub project URLs
+- ✅ **v1.0.2** — Faster dashboard rendering (loading animation removed), expanded PyPI SEO keywords, corrected GitHub project URLs
+- ✅ **v1.0.2** — Core architecture unified, missing dependencies resolved, explicit timeouts added for REST providers, and enhanced CLI doctor diagnostics.
+
 - 🟡 **v1.1** — Live streaming: brain activity, frontend events, provider timeline
+
 
 
 Full version history: [CHANGELOG.md](https://github.com/ranajitdharpersonal/rdai/blob/main/CHANGELOG.md)

@@ -16,3 +16,10 @@ All notable changes to the `rdai` project will be documented in this file.
 - Support for Gemini, OpenAI, Claude, Groq, and custom models.
 - Interactive setup wizard using `rdai init`.
 - Live API network diagnostic tool via `rdai doctor`.
+
+## [1.0.2] - 2026-08-09
+### Fixed
+- Merged duplicate Router and Failover architectures into a single unified `engine.py`.
+- Added missing `requests` dependency to resolve installation crashes.
+- Improved `rdai doctor` to catch and classify real HTTP network errors instead of generic auth errors.
+- Added explicit 15-second timeouts to all direct REST API providers (Claude, DeepSeek, Qwen, Llama, Mistral, HuggingFace) to prevent system hangs.

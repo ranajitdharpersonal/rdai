@@ -21,7 +21,14 @@ class DeepseekProvider(BaseProvider):
             "messages": [{"role": "user", "content": prompt}]
         }
         
-        response = requests.post("https://api.deepseek.com/v1/chat/completions", headers=headers, json=data)
+        # 🎯 FIX: Added explicit timeout parameter to prevent hanging
+        timeout_val = kwargs.get("timeout", 15.0)
+        response = requests.post(
+            "https://api.deepseek.com/v1/chat/completions", 
+            headers=headers, 
+            json=data, 
+            timeout=timeout_val
+        )
         response.raise_for_status()
         
         return response.json()["choices"][0]["message"]["content"]

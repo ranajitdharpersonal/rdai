@@ -23,7 +23,14 @@ class ClaudeProvider(BaseProvider):
             "messages": [{"role": "user", "content": prompt}]
         }
         
-        response = requests.post("https://api.anthropic.com/v1/messages", headers=headers, json=data)
+        # 🎯 FIX: Added explicit timeout parameter to prevent hanging
+        timeout_val = kwargs.get("timeout", 15.0)
+        response = requests.post(
+            "https://api.anthropic.com/v1/messages", 
+            headers=headers, 
+            json=data, 
+            timeout=timeout_val
+        )
         response.raise_for_status()
         
         return response.json()["content"][0]["text"]

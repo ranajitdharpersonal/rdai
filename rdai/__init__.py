@@ -29,7 +29,7 @@ from .providers.llama import LlamaProvider
 from .providers.mistral import MistralProvider
 from .providers.huggingface import HuggingfaceProvider
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 _BUILTIN_PROVIDER_CLASSES: Final[dict[str, type[BaseProvider]]] = {
     "gemini": GeminiProvider,

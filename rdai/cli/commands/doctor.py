@@ -14,7 +14,7 @@ console = Console()
 
 def print_mini_header():
     header = (
-        "[bold cyan]🚀 rdai (Ranajit Dhar AI)[/bold cyan] [bold white]v1.0.1[/bold white]\n"
+        "[bold cyan]🚀 rdai (Ranajit Dhar AI)[/bold cyan] [bold white]v1.0.2[/bold white]\n"
         "[bold yellow]👑 Created by:[/bold yellow] [bold white]Ranajit Dhar[/bold white] | [bold yellow]🌐 Website:[/bold yellow] [bold cyan]https://ranajitdhar.in[/bold cyan]\n"
         "[dim]────────────────────────────────────────────────────────────[/dim]"
     )
@@ -92,9 +92,25 @@ def run_doctor():
             except NotImplementedError:
                 # Skeleton models er jonno graceful status
                 results.append((p_name, key_status, "[blue]🔍 FORMAT OK (SDK Pending)[/blue]", "[dim]-[/dim]"))
-            except Exception:
-                # Invalid Key ba network er error asle
-                results.append((p_name, key_status, "[red]🔴 AUTH ERROR[/red]", "[dim]-[/dim]"))
+            except Exception as e:
+                # Real error classification
+                error_str = str(e).lower()
+                if "401" in error_str or "auth" in error_str or "unauthorized" in error_str:
+                    diag_status = "[red]❌ INVALID API KEY[/red]"
+                elif "403" in error_str or "forbidden" in error_str:
+                    diag_status = "[red]🚫 ACCESS DENIED[/red]"
+                elif "429" in error_str or "rate" in error_str or "quota" in error_str:
+                    diag_status = "[yellow]⏳ RATE LIMITED[/yellow]"
+                elif "timeout" in error_str:
+                    diag_status = "[yellow]⏱ TIMEOUT[/yellow]"
+                elif "connection" in error_str or "network" in error_str:
+                    diag_status = "[red]🌐 NETWORK ERROR[/red]"
+                else:
+                    # Truncate unexpected errors so they fit in the table
+                    clean_err = str(e).replace('\n', ' ')[:20]
+                    diag_status = f"[red]🔥 ERROR: {clean_err}...[/red]"
+                    
+                results.append((p_name, key_status, diag_status, "[dim]-[/dim]"))
                 
             progress.advance(task)
             
@@ -103,4 +119,4 @@ def run_doctor():
         table.add_row(*res)
         
     console.print(Align.center(table))
-    console.print(Align.center("\n[dim]Note: 'AUTH ERROR' = Invalid key. 'FORMAT OK' = Key detected, but model SDK is under development.[/dim]\n"))
+    console.print(Align.center("\n[dim]Note: 'INVALID API KEY' indicates authentication failure. 'FORMAT OK' means SDK is pending.[/dim]\n"))

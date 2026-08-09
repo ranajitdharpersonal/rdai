@@ -6,13 +6,13 @@ with open("README.md", "r", encoding="utf-8") as fh:
 
 setup(
     name="rdai",
-    version="1.0.1",
+    version="1.0.2",
     author="Ranajit Dhar",
     author_email="contact@ranajitdhar.in",
     description="One Interface. Any AI. Unbreakable Auto-Failover.",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="https://github.com/ranajitdharpersonal/rdai", # Eta GitHub er jonno
+    url="https://github.com/ranajitdharpersonal/rdai", 
     project_urls={
         "Website": "https://ranajitdhar.in",
         "Bug Tracker": "https://github.com/ranajitdharpersonal/rdai/issues",
@@ -27,12 +27,11 @@ setup(
         "openai",
         "groq",
         "boto3",
-        "requests"
+        "requests",
+        "python-dotenv"
     ],
     entry_points={
         "console_scripts": [
-            # Tumi terminal e 'rdai' likhle kon file ta run hobe, seta ekhane thik hoy.
-            # Jodi tomar ashol CLI app ta rdai/cli/main.py te thake, tahole eta thik ache:
             "rdai=rdai.cli.main:app", 
         ],
     },

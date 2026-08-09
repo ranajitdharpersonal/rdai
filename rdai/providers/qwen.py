@@ -21,10 +21,13 @@ class QwenProvider(BaseProvider):
             "input": {"messages": [{"role": "user", "content": prompt}]}
         }
         
+        # 🎯 FIX: Added explicit timeout parameter
+        timeout_val = kwargs.get("timeout", 15.0)
         response = requests.post(
             "https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation", 
             headers=headers, 
-            json=data
+            json=data,
+            timeout=timeout_val
         )
         response.raise_for_status()
         

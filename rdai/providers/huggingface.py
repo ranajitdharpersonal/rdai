@@ -18,10 +18,14 @@ class HuggingfaceProvider(BaseProvider):
         # Instruction format for models
         formatted_prompt = f"<s>[INST] {prompt} [/INST]"
         
+        # 🎯 FIX: Added explicit timeout parameter to prevent hanging
+        timeout_val = kwargs.get("timeout", 15.0)
+        
         response = requests.post(
             f"https://api-inference.huggingface.co/models/{self.model}",
             headers=headers,
-            json={"inputs": formatted_prompt, "parameters": {"max_new_tokens": 512}}
+            json={"inputs": formatted_prompt, "parameters": {"max_new_tokens": 512}},
+            timeout=timeout_val
         )
         response.raise_for_status()
         

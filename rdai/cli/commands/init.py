@@ -1,6 +1,5 @@
 import os
 import sys
-import subprocess
 import typer
 import questionary
 import yaml
@@ -20,7 +19,7 @@ INIT_CONTENT = r"""[bold cyan]
 ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝[/bold cyan]
 
 [bold yellow]⚙️  SYSTEM INITIALIZATION SEQUENCE[/bold yellow]
-[bold white]Version: v1.0.1[/bold white]
+[bold white]Version: v1.0.2[/bold white]
 
 [dim]────────────────────────────────────────────────────────[/dim]
 [bold yellow]👑 Created by :[/bold yellow] [bold white]Ranajit Dhar[/bold white]
@@ -30,26 +29,6 @@ INIT_CONTENT = r"""[bold cyan]
 [bold white]Configure your Multi-Brain AI Orchestrator.[/bold white]
 [dim]Select providers and define your failover strategy below.[/dim]
 """
-
-def auto_install_packages():
-    """Silently installs required packages if they are missing."""
-    try:
-        import openai
-        import groq
-        import boto3
-        import google.genai
-    except ImportError:
-        console.print("\n[bold yellow]📦 First time setup: Installing required AI engines...[/bold yellow]")
-        try:
-            # Check if requirements.txt exists in the current directory
-            if os.path.exists("requirements.txt"):
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt", "--quiet"])
-            else:
-                # Fallback directly to pip install if requirements.txt is not found
-                subprocess.check_call([sys.executable, "-m", "pip", "install", "openai", "groq", "boto3", "google-genai", "--quiet"])
-            console.print("[bold green]✔ All AI engines installed successfully![/bold green]\n")
-        except Exception as e:
-            console.print(f"[red]❌ Background installation failed: {e}. Please install packages manually.[/red]\n")
 
 def setup_init():
     """Initialize the rdai multi-brain AI environment."""
@@ -64,9 +43,8 @@ def setup_init():
         if not overwrite:
             console.print("[green]✔ Setup cancelled. Your existing configuration is safe![/green]\n")
             raise typer.Exit()
-
-    # 📦 2nd Step: Auto-install required SDKs if missing
-    auto_install_packages()
+            
+    # Note: Dependencies are now managed via pyproject.toml
     
     # 🎨 The Dashboard Face for Init with Creator Details
     console.print(Panel(
@@ -155,7 +133,8 @@ def setup_init():
             
         config_data = {
             "strategy": strategy,
-            "provider_order": provider_order
+            # 🎯 FIX: Using canonical key 'providers' for rdai.yaml
+            "providers": provider_order
         }
         with open("rdai.yaml", "w") as f:
             yaml.dump(config_data, f, default_flow_style=False, sort_keys=False)
