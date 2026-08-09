@@ -24,7 +24,8 @@ PROVIDER_ENV_KEYS: Final[dict[str, str]] = {
     "gemini": "GEMINI_API_KEY",
     "groq": "GROQ_API_KEY",
     "openai": "OPENAI_API_KEY",
-    "vertexai": "VERTEXAI_API_KEY",
+    # 🎯 FIX: Changed to PROJECT_ID for VertexAI
+    "vertexai": "VERTEXAI_PROJECT_ID",
     "claude": "CLAUDE_API_KEY",
     "aws_bedrock": "AWS_BEDROCK_API_KEY",
     "deepseek": "DEEPSEEK_API_KEY",
@@ -54,7 +55,8 @@ API_KEY_PLACEHOLDERS: Final[dict[str, str]] = {
     "gemini": "your-gemini-api-key",
     "groq": "your-groq-api-key",
     "openai": "your-openai-api-key",
-    "vertexai": "your-vertexai-api-key",
+    # 🎯 FIX: Changed placeholder
+    "vertexai": "your-gcp-project-id",
     "claude": "your-claude-api-key",
     "aws_bedrock": "your-aws_bedrock-api-key",
     "deepseek": "your-deepseek-api-key",

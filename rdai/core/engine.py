@@ -57,6 +57,13 @@ class Router:
                 p = self.registry.get(name)
                 if p and p.is_available:
                     route.append(p)
+                    
+            # 🎯 FIX: Append remaining available providers as fallback
+            available = self.registry.all_available()
+            for p in available:
+                if p not in route:
+                    route.append(p)
+                    
             return route
             
         elif self.strategy == "smart":

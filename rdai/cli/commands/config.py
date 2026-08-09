@@ -31,7 +31,8 @@ def run_config():
     config_text = "[bold white]⚙️  Current System Configuration:[/bold white]\n\n"
     config_text += f"  • Routing Strategy : [bold cyan]{config.get('strategy', 'unknown').upper()}[/bold cyan]\n"
     
-    providers = config.get("provider_order", [])
+    # 🎯 FIX: Check both new and old config keys
+    providers = config.get("providers", config.get("provider_order", []))
     chain = " ➔ ".join([p.capitalize() for p in providers])
     config_text += f"  • Failover Chain   : [bold yellow]{chain}[/bold yellow]\n"
     
