@@ -159,10 +159,20 @@ class AI:
             provider_class = _BUILTIN_PROVIDER_CLASSES.get(provider_name)
             if provider_class is None:
                 continue
-            provider = provider_class(
-                api_key=api_keys.get(provider_name),
-                model=normalized_models.get(provider_name),
-            )
+            # 🎯 FIX: Smartly pass the model ONLY if it is explicitly provided.
+            # Otherwise, let the provider use its own safe default!
+            model_val = normalized_models.get(provider_name)
+            
+            if model_val:
+                provider = provider_class(
+                    api_key=api_keys.get(provider_name),
+                    model=model_val,
+                )
+            else:
+                provider = provider_class(
+                    api_key=api_keys.get(provider_name),
+                )
+                
             self.registry.register(provider)
 
     def generate(
@@ -173,7 +183,6 @@ class AI:
         **kwargs: Any,
     ) -> str:
         """Generate text through the selected provider with automatic failover."""
-
         if not isinstance(prompt, str) or not prompt.strip():
             raise ValueError("prompt must be a non-empty string.")
         return self.failover.generate(prompt, traits=traits, **kwargs)
