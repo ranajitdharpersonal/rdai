@@ -2,6 +2,7 @@ import typer
 from rich.console import Console
 from rich.panel import Panel
 from rich.align import Align
+from rdai.cli.commands.generate import run_generate
 
 # 🎯 Importing ALL commands
 from rdai.cli.commands.init import setup_init 
@@ -35,8 +36,9 @@ LOGO_CONTENT = r"""[bold cyan]
 [dim]────────────────────────────────────────────────────────[/dim]
 
 [yellow]⚡ Get Started:[/yellow]
-  [bold green]rdai init[/bold green]    [white]- Setup your AI providers & strategy[/white]
-  [bold green]rdai doctor[/bold green]  [white]- Check your API keys and health[/white]
+  [bold green]rdai init[/bold green]      [white]- Setup your AI providers & strategy[/white]
+  [bold green]rdai generate[/bold green]  [white]- Generate text with your AI providers[/white]
+  [bold green]rdai doctor[/bold green]    [white]- Check your API keys and health[/white]
 
 [italic dim]Type [bold cyan]rdai --help[/bold cyan] for all commands.[/italic dim]
 """
@@ -59,6 +61,10 @@ def main_callback(ctx: typer.Context):
 
 # 🎯 Wiring the exact safe functions
 app.command(name="init", help="Setup your AI providers & strategy")(setup_init)
+app.command(
+    name="generate",
+    help="Generate a response through your configured AI providers",
+)(run_generate)
 app.command(name="doctor", help="Check your API keys")(run_doctor)
 app.command(name="about", help="Learn about the rdai orchestrator")(run_about)
 app.command(name="config", help="View your current routing config")(run_config)
