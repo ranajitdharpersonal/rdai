@@ -1,154 +1,561 @@
-import time
+from __future__ import annotations
+
 import logging
-from typing import Any, Sequence, Optional, Dict, List
+import time
+from collections.abc import Sequence
+from typing import Any, Optional
+
 from rdai.providers.base import BaseProvider
 
-# Logging setup for silent failover tracking
 logger = logging.getLogger("rdai.engine")
 
+
 class ProviderRegistry:
-    """Enterprise-grade Dynamic Registry for AI Providers."""
-    
-    def __init__(self):
-        self._providers: Dict[str, BaseProvider] = {}
+    """Registry for AI provider instances."""
+
+    def __init__(self) -> None:
+        self._providers: dict[str, BaseProvider] = {}
 
     def register(self, provider: BaseProvider) -> None:
-        """Registers a provider instance."""
+        """Register a provider instance."""
+
         name = getattr(provider, "name", None)
+
         if not name:
-            name = provider.__class__.__name__.replace("Provider", "").lower()
+            name = provider.__class__.__name__.replace(
+                "Provider",
+                "",
+            ).lower()
 
         self._providers[name.lower()] = provider
 
     def get(self, name: str) -> Optional[BaseProvider]:
-        """Fetches a provider instance by name."""
         return self._providers.get(name.lower())
 
-    def all_available(self) -> List[BaseProvider]:
-        """Returns all providers that have API keys (is_available == True)."""
-        return [p for p in self._providers.values() if p.is_available]
+    def all_available(self) -> list[BaseProvider]:
+        return [
+            provider
+            for provider in self._providers.values()
+            if provider.is_available
+        ]
 
-    def get_providers_by_trait(self, traits: Sequence[str]) -> List[BaseProvider]:
-        """Finds providers that have ANY of the requested traits."""
-        matching = []
+    def get_providers_by_trait(
+        self,
+        traits: Sequence[str],
+    ) -> list[BaseProvider]:
+        requested = {
+            trait.lower()
+            for trait in traits
+            if isinstance(trait, str)
+        }
+
+        if not requested:
+            return []
+
+        matching: list[BaseProvider] = []
+
         for provider in self._providers.values():
-            if provider.is_available and hasattr(provider, 'traits'):
-                # Check if any requested trait matches the provider's traits
-                if any(trait.lower() in [t.lower() for t in provider.traits] for trait in traits):
-                    matching.append(provider)
+            if not provider.is_available:
+                continue
+
+            provider_traits = {
+                trait.lower()
+                for trait in provider.traits
+                if isinstance(trait, str)
+            }
+
+            if requested.intersection(provider_traits):
+                matching.append(provider)
+
         return matching
 
 
 class Router:
-    """Smart routing logic decoupled from specific models."""
-    
-    def __init__(self, registry: ProviderRegistry, strategy: str = "manual", priority: Sequence[str] = None):
+    def __init__(
+        self,
+        registry: ProviderRegistry,
+        strategy: str = "manual",
+        priority: Sequence[str] | None = None,
+    ) -> None:
         self.registry = registry
-        self.strategy = strategy.lower()
+        self.strategy = strategy.lower().strip()
         self.priority = list(priority) if priority else []
 
-    def get_route(self, prompt: str = "", traits: Sequence[str] = None) -> List[BaseProvider]:
-        """Determine the priority chain of providers to call based on strategy."""
-        
+    def get_route(
+        self,
+        prompt: str = "",
+        traits: Sequence[str] | None = None,
+    ) -> list[BaseProvider]:
         if self.strategy == "manual":
-            if not self.priority:
-                return self.registry.all_available()
-            
-            # Follow exact configured order
-            route = []
-            for name in self.priority:
-                p = self.registry.get(name)
-                if p and p.is_available:
-                    route.append(p)
-                    
-            # 🎯 FIX: Append remaining available providers as fallback
-            available = self.registry.all_available()
-            for p in available:
-                if p not in route:
-                    route.append(p)
-                    
-            return route
-            
-        elif self.strategy == "smart":
-            # Baseline is all active providers
-            available = self.registry.all_available()
-            chain = available.copy()
-            
-            requested_traits = list(traits) if traits else []
-            prompt_lower = prompt.lower()
-            
-            # Intent detection from prompt if no explicit traits given
-            if not requested_traits:
-                if any(word in prompt_lower for word in ["code", "script", "python", "bug", "react"]):
-                    requested_traits.append("coding")
-                if any(word in prompt_lower for word in ["fast", "quick"]):
-                    requested_traits.append("fast")
-            
-            # Reorder chain based on traits
-            if requested_traits:
-                best_matches = self.registry.get_providers_by_trait(requested_traits)
-                for p in reversed(best_matches):  # Insert at front in priority
-                    if p in chain:
-                        chain.remove(p)
-                        chain.insert(0, p)
-                        
-            return chain
-            
-        else:
-            # Fallback to standard availability
-            return self.registry.all_available()
+            return self._manual_route()
+
+        if self.strategy == "smart":
+            return self._smart_route(
+                prompt=prompt,
+                traits=traits,
+            )
+
+        return self.registry.all_available()
+
+    def _manual_route(self) -> list[BaseProvider]:
+        available = self.registry.all_available()
+
+        if not self.priority:
+            return available
+
+        route: list[BaseProvider] = []
+
+        for name in self.priority:
+            provider = self.registry.get(name)
+
+            if provider and provider.is_available:
+                route.append(provider)
+
+        for provider in available:
+            if provider not in route:
+                route.append(provider)
+
+        return route
+
+    def _smart_route(
+        self,
+        prompt: str,
+        traits: Sequence[str] | None,
+    ) -> list[BaseProvider]:
+        available = self.registry.all_available()
+
+        if not available:
+            return []
+
+        requested_traits = [
+            trait
+            for trait in (traits or [])
+            if isinstance(trait, str) and trait.strip()
+        ]
+
+        prompt_lower = prompt.lower()
+
+        if not requested_traits:
+            if any(
+                word in prompt_lower
+                for word in (
+                    "code",
+                    "coding",
+                    "script",
+                    "python",
+                    "bug",
+                    "react",
+                    "program",
+                )
+            ):
+                requested_traits.append("coding")
+
+            if any(
+                word in prompt_lower
+                for word in (
+                    "fast",
+                    "quick",
+                    "speed",
+                )
+            ):
+                requested_traits.append("fast")
+
+            if any(
+                word in prompt_lower
+                for word in (
+                    "reason",
+                    "logic",
+                    "analyze",
+                    "analysis",
+                )
+            ):
+                requested_traits.append("reasoning")
+
+        if not requested_traits:
+            return available
+
+        best_matches = self.registry.get_providers_by_trait(
+            requested_traits
+        )
+
+        route: list[BaseProvider] = []
+
+        for provider in best_matches:
+            if provider not in route:
+                route.append(provider)
+
+        for provider in available:
+            if provider not in route:
+                route.append(provider)
+
+        return route
 
 
 class Failover:
-    """The Unbreakable 3-Tier Circuit Breaker System."""
-    
-    def __init__(self, router: Router, failure_threshold: int = 3, recovery_timeout: float = 30.0):
+    """Resilient provider failover with transient-error circuit breaking."""
+
+    def __init__(
+        self,
+        router: Router,
+        failure_threshold: int = 3,
+        recovery_timeout: float = 30.0,
+    ) -> None:
+        if failure_threshold < 1:
+            raise ValueError(
+                "failure_threshold must be at least 1."
+            )
+
+        if recovery_timeout < 0:
+            raise ValueError(
+                "recovery_timeout cannot be negative."
+            )
+
         self.router = router
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
-        # Tracks health of each provider
-        self.circuit_breakers = {}
 
-    def generate(self, prompt: str, traits: Sequence[str] = None, **kwargs: Any) -> str:
-        """The magic shield that routes and catches errors silently."""
-        providers = self.router.get_route(prompt, traits=traits)
-        
+        self.circuit_breakers: dict[
+            int,
+            dict[str, float | int],
+        ] = {}
+
+    @staticmethod
+    def _provider_key(provider: BaseProvider) -> int:
+        return id(provider)
+
+    @staticmethod
+    def _status_code(error: Exception) -> Optional[int]:
+        status_code = getattr(error, "status_code", None)
+
+        if isinstance(status_code, int):
+            return status_code
+
+        response = getattr(error, "response", None)
+        response_status = getattr(
+            response,
+            "status_code",
+            None,
+        )
+
+        if isinstance(response_status, int):
+            return response_status
+
+        return None
+
+    @classmethod
+    def _is_transient_error(cls, error: Exception) -> bool:
+        status_code = cls._status_code(error)
+
+        if status_code is not None:
+            return (
+                status_code == 408
+                or status_code == 429
+                or status_code >= 500
+            )
+
+        if isinstance(
+            error,
+            (
+                TimeoutError,
+                ConnectionError,
+            ),
+        ):
+            return True
+
+        error_text = str(error).lower()
+
+        transient_markers = (
+            "timeout",
+            "timed out",
+            "connection reset",
+            "connection refused",
+            "connection aborted",
+            "temporarily unavailable",
+            "temporary failure",
+            "service unavailable",
+            "server error",
+            "rate limit",
+            "rate-limited",
+            "rate limited",
+            "too many requests",
+            "resource exhausted",
+            "overloaded",
+            "network error",
+        )
+
+        return any(
+            marker in error_text
+            for marker in transient_markers
+        )
+
+    @classmethod
+    def _is_model_error(cls, error: Exception) -> bool:
+        status_code = cls._status_code(error)
+
+        if status_code == 404:
+            return True
+
+        error_text = str(error).lower()
+
+        return any(
+            marker in error_text
+            for marker in (
+                "model not found",
+                "model_not_found",
+                "unknown model",
+                "invalid model",
+                "model does not exist",
+            )
+        )
+
+    @staticmethod
+    def _has_explicit_model(provider: BaseProvider) -> bool:
+        requested_model = getattr(
+            provider,
+            "_requested_model",
+            None,
+        )
+
+        return bool(
+            isinstance(requested_model, str)
+            and requested_model.strip()
+        )
+
+    def _get_state(
+        self,
+        provider: BaseProvider,
+    ) -> dict[str, float | int]:
+        key = self._provider_key(provider)
+
+        state = self.circuit_breakers.get(key)
+
+        if state is None:
+            state = {
+                "failures": 0,
+                "last_failure": 0.0,
+            }
+
+            self.circuit_breakers[key] = state
+
+        return state
+
+    def _circuit_allows_request(
+        self,
+        state: dict[str, float | int],
+    ) -> bool:
+        failures = int(state["failures"])
+
+        if failures < self.failure_threshold:
+            return True
+
+        last_failure = float(
+            state["last_failure"]
+        )
+
+        return (
+            time.monotonic() - last_failure
+        ) >= self.recovery_timeout
+
+    @staticmethod
+    def _reset_state(
+        state: dict[str, float | int],
+    ) -> None:
+        state["failures"] = 0
+        state["last_failure"] = 0.0
+
+    def _record_failure(
+        self,
+        state: dict[str, float | int],
+    ) -> None:
+        state["failures"] = (
+            int(state["failures"]) + 1
+        )
+        state["last_failure"] = time.monotonic()
+
+    def _recover_model(
+        self,
+        provider: BaseProvider,
+    ) -> bool:
+        """Refresh the provider model after a model-related failure."""
+
+        if self._has_explicit_model(provider):
+            return False
+
+        refresh_model = getattr(
+            provider,
+            "refresh_model",
+            None,
+        )
+
+        if not callable(refresh_model):
+            return False
+
+        previous_model = getattr(
+            provider,
+            "model",
+            None,
+        )
+
+        try:
+            refreshed_model = refresh_model()
+        except Exception as error:
+            logger.warning(
+                "%s model refresh failed: %s",
+                provider.__class__.__name__,
+                error,
+            )
+            return False
+
+        if not refreshed_model:
+            return False
+
+        if refreshed_model == previous_model:
+            return False
+
+        logger.info(
+            "%s switched model from '%s' to '%s'.",
+            provider.__class__.__name__,
+            previous_model,
+            refreshed_model,
+        )
+
+        return True
+
+    def _try_provider(
+        self,
+        provider: BaseProvider,
+        prompt: str,
+        kwargs: dict[str, Any],
+    ) -> str:
+        """Attempt a provider, including one model-recovery retry."""
+
+        try:
+            response = provider.generate(
+                prompt,
+                **kwargs,
+            )
+
+            return response
+
+        except Exception as error:
+            if not self._is_model_error(error):
+                raise
+
+            logger.warning(
+                "%s failed because of model '%s': %s",
+                provider.__class__.__name__,
+                getattr(provider, "model", None),
+                error,
+            )
+
+            recovered = self._recover_model(
+                provider
+            )
+
+            if not recovered:
+                raise
+
+            logger.info(
+                "%s retrying with refreshed model '%s'.",
+                provider.__class__.__name__,
+                getattr(provider, "model", None),
+            )
+
+            return provider.generate(
+                prompt,
+                **kwargs,
+            )
+
+    def generate(
+        self,
+        prompt: str,
+        traits: Sequence[str] | None = None,
+        **kwargs: Any,
+    ) -> str:
+        providers = self.router.get_route(
+            prompt,
+            traits=traits,
+        )
+
         if not providers:
-            raise RuntimeError("🚨 No available AI providers to route the request! Check your .env API keys.")
+            raise RuntimeError(
+                "🚨 No available AI providers to route "
+                "the request! Check your .env API keys."
+            )
+
+        last_transient_error: Optional[Exception] = None
+        attempted_provider = False
 
         for provider in providers:
+            state = self._get_state(provider)
+
+            if not self._circuit_allows_request(state):
+                logger.info(
+                    "Circuit open for %s; skipping provider.",
+                    provider.__class__.__name__,
+                )
+                continue
+
+            attempted_provider = True
             provider_name = provider.__class__.__name__
-            
-            # Check circuit breaker state
-            state = self.circuit_breakers.get(provider_name, {"failures": 0, "last_failure": 0.0})
-            
-            # If threshold reached, check if it's time to probe again
-            if state["failures"] >= self.failure_threshold:
-                if time.time() - state["last_failure"] < self.recovery_timeout:
-                    # Circuit Open: Skip this model
-                    continue 
-                else:
-                    # Circuit Half-Open: Probe mode
-                    state["failures"] = 0 
 
-            # Attempt Generation
             try:
-                response = provider.generate(prompt, **kwargs)
-                
-                # If success, reset any past failures
-                state["failures"] = 0
-                self.circuit_breakers[provider_name] = state
-                return response
-                
-            except Exception as e:
-                # 🛡️ THE SHIELD: Catch error, record it, and silently switch!
-                logger.warning(f"⚠️ {provider_name} failed: {str(e)}. Initiating Auto-Failover...")
-                print(f"⚠️ {provider_name.replace('Provider', '').upper()} failed. Switching to next brain...")
-                
-                # Update failure state
-                state["failures"] += 1
-                state["last_failure"] = time.time()
-                self.circuit_breakers[provider_name] = state
+                response = self._try_provider(
+                    provider,
+                    prompt,
+                    kwargs,
+                )
 
-        # If loop finishes without returning, all providers crashed
-        raise RuntimeError("🚨 ALL providers in the failover chain crashed or are rate-limited. Circuit is completely broken.")
+                self._reset_state(state)
+
+                return response
+
+            except Exception as error:
+                if self._is_transient_error(error):
+                    last_transient_error = error
+
+                    self._record_failure(state)
+
+                    logger.warning(
+                        "%s failed with transient error: "
+                        "%s. Trying next provider.",
+                        provider_name,
+                        error,
+                    )
+
+                    continue
+
+                if self._is_model_error(error):
+                    logger.warning(
+                        "%s still rejected model '%s' "
+                        "after recovery attempt: %s",
+                        provider_name,
+                        getattr(provider, "model", None),
+                        error,
+                    )
+
+                    continue
+
+                logger.error(
+                    "%s failed with non-transient error: %s",
+                    provider_name,
+                    error,
+                )
+
+                raise
+
+        if not attempted_provider:
+            raise RuntimeError(
+                "🚨 All available providers are currently "
+                "behind an open circuit. Please retry shortly."
+            )
+
+        if last_transient_error is not None:
+            raise RuntimeError(
+                "🚨 All providers in the failover chain "
+                "failed with transient errors."
+            ) from last_transient_error
+
+        raise RuntimeError(
+            "🚨 No provider completed the request."
+        )
