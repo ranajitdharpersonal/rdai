@@ -1,39 +1,84 @@
-import requests
+from __future__ import annotations
+
 from typing import Any, Optional
+
+import requests
+
 from rdai.providers.base import BaseProvider
 
+
 class ClaudeProvider(BaseProvider):
-    traits = ["creative", "analytical", "reasoning"]
+    """Anthropic Claude provider adapter."""
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        super().__init__(api_key, model)
+    traits = (
+        "creative",
+        "analytical",
+        "reasoning",
+    )
 
-    def fallback_models(self):
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        super().__init__(
+            api_key=api_key,
+            model=model,
+        )
+
+    def fallback_models(self) -> tuple[str, ...]:
+        """Return the default Claude fallback model."""
         return ("claude-3-haiku-20240307",)
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
+        """Generate a response through the Anthropic Messages API."""
+
         if not self.is_available:
             raise ValueError("Claude API key is missing.")
-            
+
+        if not self.model:
+            raise RuntimeError(
+                "No Claude model is configured or available."
+            )
+
         headers = {
             "x-api-key": self.api_key,
             "anthropic-version": "2023-06-01",
-            "content-type": "application/json"
+            "content-type": "application/json",
         }
-        data = {
+
+        max_tokens = kwargs.pop("max_tokens", 1024)
+        timeout = kwargs.pop("timeout", 15.0)
+
+        payload = {
             "model": self.model,
-            "max_tokens": kwargs.get("max_tokens", 1024),
-            "messages": [{"role": "user", "content": prompt}]
+            "max_tokens": max_tokens,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            **kwargs,
         }
-        
-        # 🎯 FIX: Added explicit timeout parameter to prevent hanging
-        timeout_val = kwargs.get("timeout", 15.0)
+
         response = requests.post(
-            "https://api.anthropic.com/v1/messages", 
-            headers=headers, 
-            json=data, 
-            timeout=timeout_val
+            "https://api.anthropic.com/v1/messages",
+            headers=headers,
+            json=payload,
+            timeout=timeout,
         )
         response.raise_for_status()
-        
-        return response.json()["content"][0]["text"]
+
+        try:
+            data = response.json()
+            content = data["content"][0]["text"]
+        except (ValueError, KeyError, IndexError, TypeError) as exc:
+            raise RuntimeError(
+                "Claude returned an unexpected response format."
+            ) from exc
+
+        if content is None:
+            raise RuntimeError("Claude returned an empty response.")
+
+        return str(content)

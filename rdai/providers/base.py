@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
 from typing import Any, Optional
 
-from rdai.providers.model_resolver import resolve_model
+from rdai.providers.model_resolver import normalize_model, resolve_model
 
 
 class BaseProvider(ABC):
@@ -12,27 +12,30 @@ class BaseProvider(ABC):
 
     1. An explicitly supplied model always wins.
     2. Static provider fallback models are used during initialization.
-    3. Runtime model discovery is opt-in and never happens during provider
-       construction.
+    3. Runtime discovery is opt-in and never happens during construction.
     4. Discovered models are cached to avoid repeated network requests.
     """
 
     # Traits help the Smart Router choose the best provider/model.
-    traits: Sequence[str] = []
+    traits: Sequence[str] = ()
 
     def __init__(
         self,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
-    ):
+    ) -> None:
         self.api_key = api_key
 
-        # Runtime discovery must NOT happen during construction.
-        # This keeps provider initialization fast and network-independent.
-        self.model = self.resolve_model(model, discover=False)
+        # Keep the user's explicit model separate so future discovery/refresh
+        # can never accidentally override it.
+        self._requested_model = normalize_model(model)
 
-        # Cached result of runtime model discovery.
+        # Runtime discovery must never happen during construction.
+        # This keeps provider initialization fast and network-independent.
+        self.model = self.resolve_model(discover=False)
+
         # None means discovery has not happened yet.
+        # An empty tuple means discovery was attempted and found nothing.
         self._discovered_models: Optional[tuple[str, ...]] = None
 
     @property
@@ -43,9 +46,8 @@ class BaseProvider(ABC):
     def available_models(self) -> Iterable[str]:
         """Return models discovered from the provider.
 
-        Provider subclasses can override this to perform actual discovery.
-        This method should only contain the provider-specific discovery logic;
-        caching is handled by :meth:`discover_models`.
+        Provider subclasses can override this with provider-specific
+        discovery logic. Network access belongs here, not in ``__init__``.
         """
         return ()
 
@@ -64,7 +66,7 @@ class BaseProvider(ABC):
             force: Re-run discovery even when a cached result exists.
 
         Returns:
-            A tuple containing discovered model identifiers.
+            A tuple of normalized discovered model identifiers.
 
         Discovery is lazy and never happens automatically during provider
         construction.
@@ -82,7 +84,7 @@ class BaseProvider(ABC):
             normalized_models: list[str] = []
 
             for candidate in discovered:
-                normalized = self._normalize_model(candidate)
+                normalized = normalize_model(candidate)
 
                 if normalized is not None:
                     normalized_models.append(normalized)
@@ -90,8 +92,8 @@ class BaseProvider(ABC):
             self._discovered_models = tuple(normalized_models)
 
         except Exception:
-            # Discovery failure must never make the provider unusable.
-            # Keep an empty cache and let fallback models continue to work.
+            # Discovery must never make the provider unusable.
+            # An empty result allows fallback_models() to remain the safety net.
             self._discovered_models = ()
 
         return self._discovered_models
@@ -102,7 +104,7 @@ class BaseProvider(ABC):
         *,
         discover: bool = False,
     ) -> Optional[str]:
-        """Resolve the model to use for this provider.
+        """Resolve the model for this provider.
 
         Resolution order:
 
@@ -110,9 +112,19 @@ class BaseProvider(ABC):
         2. Discovered runtime model(s), when ``discover=True``.
         3. Provider fallback model(s).
 
-        By default discovery is disabled so this method remains safe to call
-        during provider construction.
+        When ``requested_model`` is omitted, the model explicitly supplied
+        during provider construction is preserved as the highest-priority
+        choice.
         """
+
+        explicit = (
+            normalize_model(requested_model)
+            if requested_model is not None
+            else self._requested_model
+        )
+
+        if explicit is not None:
+            return explicit
 
         available_models: Iterable[str] = ()
 
@@ -120,31 +132,24 @@ class BaseProvider(ABC):
             available_models = self.discover_models()
 
         return resolve_model(
-            requested_model=requested_model,
+            requested_model=None,
             available_models=available_models,
             fallback_models=self.fallback_models(),
         )
 
-    @staticmethod
-    def _normalize_model(model: Optional[str]) -> Optional[str]:
-        """Normalize a model name without changing its meaning."""
-
-        if model is None:
-            return None
-
-        if not isinstance(model, str):
-            raise TypeError("model must be a string or None.")
-
-        normalized = model.strip()
-        return normalized or None
-
     def refresh_model(self) -> Optional[str]:
-        """Refresh runtime discovery and resolve a model again.
+        """Refresh discovered models and update the active model.
 
-        The provider's current model is replaced only when a valid model
-        candidate is found. Explicit provider configuration is preserved
-        because an explicit model continues to have highest priority.
+        An explicitly configured model always remains authoritative.
+        Otherwise, a newly discovered model is preferred, with the provider
+        fallback remaining available when discovery returns nothing.
         """
+
+        if self._requested_model is not None:
+            self.model = self._requested_model
+            return self.model
+
+        self.discover_models(force=True)
 
         resolved = self.resolve_model(discover=True)
 

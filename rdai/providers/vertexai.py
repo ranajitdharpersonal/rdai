@@ -1,26 +1,87 @@
+from __future__ import annotations
+
 from typing import Any, Optional
-from rdai.providers.base import BaseProvider
+
 from google import genai
 
+from rdai.providers.base import BaseProvider
+
+
 class VertexaiProvider(BaseProvider):
-    traits = ["enterprise", "secure", "multimodal"]
+    """Google Vertex AI provider using the google-genai SDK."""
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
-        # api_key is treated as GCP Project ID here
-        super().__init__(api_key, model)
+    traits = (
+        "enterprise",
+        "secure",
+        "multimodal",
+    )
 
-    def fallback_models(self):
+    default_location = "us-central1"
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        model: Optional[str] = None,
+    ) -> None:
+        # ``api_key`` is retained for compatibility with the common provider
+        # interface. For Vertex AI it represents the configured GCP project ID.
+        super().__init__(
+            api_key=api_key,
+            model=model,
+        )
+
+    def fallback_models(self) -> tuple[str, ...]:
+        """Return the default Vertex AI Gemini model."""
         return ("gemini-2.5-flash",)
 
+    @property
+    def project_id(self) -> Optional[str]:
+        """Return the configured GCP project ID."""
+        if not self.api_key:
+            return None
+
+        project_id = self.api_key.strip()
+        return project_id or None
+
+    @property
+    def is_available(self) -> bool:
+        """Return True when a GCP project is configured.
+
+        Actual Google Cloud credentials are resolved by the google-genai SDK
+        when a request is made.
+        """
+        return self.project_id is not None
+
     def generate(self, prompt: str, **kwargs: Any) -> str:
+        """Generate a response through Vertex AI."""
+
         if not self.is_available:
-            raise ValueError("GCP Project ID is missing for VertexAI.")
-            
-        # Standard Vertex AI client via modern google.genai
-        client = genai.Client(vertexai=True, project=self.api_key, location="us-central1")
-        
+            raise ValueError(
+                "GCP Project ID is missing for VertexAI."
+            )
+
+        if not self.model:
+            raise RuntimeError(
+                "No VertexAI model is configured or available."
+            )
+
+        client = genai.Client(
+            vertexai=True,
+            project=self.project_id,
+            location=kwargs.pop("location", self.default_location),
+        )
+
         response = client.models.generate_content(
             model=self.model,
             contents=prompt,
+            **kwargs,
         )
-        return response.text
+
+        content = getattr(response, "text", None)
+
+        if content is None:
+            raise RuntimeError(
+                "VertexAI returned an empty response."
+            )
+
+        return content
