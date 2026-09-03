@@ -5,8 +5,11 @@ from rdai.providers.base import BaseProvider
 class QwenProvider(BaseProvider):
     traits = ["multilingual", "efficient"]
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "qwen-turbo"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         super().__init__(api_key, model)
+
+    def fallback_models(self):
+        return ("qwen-turbo",)
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         if not self.is_available:

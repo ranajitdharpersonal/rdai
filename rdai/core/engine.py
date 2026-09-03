@@ -14,8 +14,11 @@ class ProviderRegistry:
 
     def register(self, provider: BaseProvider) -> None:
         """Registers a provider instance."""
-        name = provider.__class__.__name__.replace("Provider", "").lower()
-        self._providers[name] = provider
+        name = getattr(provider, "name", None)
+        if not name:
+            name = provider.__class__.__name__.replace("Provider", "").lower()
+
+        self._providers[name.lower()] = provider
 
     def get(self, name: str) -> Optional[BaseProvider]:
         """Fetches a provider instance by name."""

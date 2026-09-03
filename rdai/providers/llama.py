@@ -5,10 +5,13 @@ from rdai.providers.base import BaseProvider
 class LlamaProvider(BaseProvider):
     traits = ["open-source", "meta", "fast"]
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "meta-llama/Llama-3-70b-chat-hf"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         super().__init__(api_key, model)
         # Defaulting to Together AI endpoint for Llama models
-        self.endpoint = "https://api.together.xyz/v1/chat/completions" 
+        self.endpoint = "https://api.together.xyz/v1/chat/completions"
+
+    def fallback_models(self):
+        return ("meta-llama/Llama-3-70b-chat-hf",) 
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         if not self.is_available:

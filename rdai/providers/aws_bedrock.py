@@ -5,10 +5,13 @@ from rdai.providers.base import BaseProvider
 class AwsBedrockProvider(BaseProvider):
     traits = ["aws", "enterprise", "stable"]
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "anthropic.claude-3-haiku-20240307-v1:0"):
-        # AWS uses AWS_ACCESS_KEY_ID from env. 
-        # api_key here acts as region_name if provided via .env
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
+    # AWS uses AWS_ACCESS_KEY_ID from env.
+    # api_key here acts as region_name if provided via .env
         super().__init__(api_key, model)
+
+    def fallback_models(self):
+        return ("anthropic.claude-3-haiku-20240307-v1:0",)
 
     @property
     def is_available(self) -> bool:

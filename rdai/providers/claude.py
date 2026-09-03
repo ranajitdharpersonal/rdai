@@ -5,8 +5,11 @@ from rdai.providers.base import BaseProvider
 class ClaudeProvider(BaseProvider):
     traits = ["creative", "analytical", "reasoning"]
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "claude-3-haiku-20240307"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         super().__init__(api_key, model)
+
+    def fallback_models(self):
+        return ("claude-3-haiku-20240307",)
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         if not self.is_available:

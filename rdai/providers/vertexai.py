@@ -5,9 +5,12 @@ from google import genai
 class VertexaiProvider(BaseProvider):
     traits = ["enterprise", "secure", "multimodal"]
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "gemini-2.5-flash"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         # api_key is treated as GCP Project ID here
         super().__init__(api_key, model)
+
+    def fallback_models(self):
+        return ("gemini-2.5-flash",)
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         if not self.is_available:

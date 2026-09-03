@@ -5,9 +5,12 @@ from rdai.providers.base import BaseProvider
 class HuggingfaceProvider(BaseProvider):
     traits = ["open-source", "flexible", "community"]
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "mistralai/Mistral-7B-Instruct-v0.2"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         # HF e model nam mane repository nam
         super().__init__(api_key, model)
+
+    def fallback_models(self):
+        return ("mistralai/Mistral-7B-Instruct-v0.2",)
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         if not self.is_available:

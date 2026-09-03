@@ -7,13 +7,16 @@ class GeminiProvider(BaseProvider):
     
     traits = ["coding", "reasoning", "multimodal", "fast"]
 
-    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = "gemini-2.5-pro"):
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         super().__init__(api_key, model)
-        # Client is initialized only if the API key is present
+    # Client is initialized only if the API key is present
         if self.api_key:
             self.client = genai.Client(api_key=self.api_key)
         else:
             self.client = None
+
+    def fallback_models(self):
+        return ("gemini-2.5-pro",)
 
     @property
     def is_available(self) -> bool:
