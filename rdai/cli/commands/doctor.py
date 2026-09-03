@@ -1,122 +1,334 @@
-import typer
-import os
-import time
-from rich.console import Console
-from rich.table import Table
-from rich.align import Align
-from rich.progress import Progress, SpinnerColumn, TextColumn
-from dotenv import dotenv_values
+from __future__ import annotations
 
-# Amader core theke model class gulo niye aschi live test er jonno
-from rdai import _BUILTIN_PROVIDER_CLASSES
+import time
+from pathlib import Path
+from typing import Any
+
+import typer
+from dotenv import dotenv_values
+from rich.align import Align
+from rich.console import Console
+from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.table import Table
+
+from rdai import _BUILTIN_PROVIDER_CLASSES, __version__
+from rdai.config.discovery import (
+    API_KEY_PLACEHOLDERS,
+    PROVIDER_DISPLAY_NAMES,
+    PROVIDER_ENV_KEYS,
+)
 
 console = Console()
 
-def print_mini_header():
+
+def print_mini_header() -> None:
     header = (
-        "[bold cyan]🚀 rdai (Ranajit Dhar AI)[/bold cyan] [bold white]v1.0.2[/bold white]\n"
-        "[bold yellow]👑 Created by:[/bold yellow] [bold white]Ranajit Dhar[/bold white] | [bold yellow]🌐 Website:[/bold yellow] [bold cyan]https://ranajitdhar.in[/bold cyan]\n"
+        f"[bold cyan]🚀 rdai (Ranajit Dhar AI)[/bold cyan] "
+        f"[bold white]v{__version__}[/bold white]\n"
+        "[bold yellow]👑 Created by:[/bold yellow] "
+        "[bold white]Ranajit Dhar[/bold white] | "
+        "[bold yellow]🌐 Website:[/bold yellow] "
+        "[bold cyan]https://ranajitdhar.in[/bold cyan]\n"
         "[dim]────────────────────────────────────────────────────────────[/dim]"
     )
+
     console.print(Align.center(header))
     console.print()
 
-def run_doctor():
-    """Scan full .env file and perform LIVE API diagnostics."""
+
+def _usable_value(
+    provider: str,
+    value: Any,
+) -> str | None:
+    if not isinstance(value, str):
+        return None
+
+    stripped = value.strip()
+
+    if not stripped:
+        return None
+
+    placeholder = API_KEY_PLACEHOLDERS.get(provider)
+
+    if (
+        placeholder
+        and stripped.casefold() == placeholder.casefold()
+    ):
+        return None
+
+    return stripped
+
+
+def _classify_error(error: Exception) -> str:
+    error_text = str(error).lower()
+
+    status_code = getattr(error, "status_code", None)
+
+    if status_code == 401 or any(
+        marker in error_text
+        for marker in (
+            "401",
+            "unauthorized",
+            "authentication",
+            "invalid api key",
+            "invalid key",
+        )
+    ):
+        return "[red]❌ INVALID CREDENTIALS[/red]"
+
+    if status_code == 403 or any(
+        marker in error_text
+        for marker in (
+            "403",
+            "forbidden",
+            "permission denied",
+            "access denied",
+        )
+    ):
+        return "[red]🚫 ACCESS DENIED[/red]"
+
+    if status_code == 429 or any(
+        marker in error_text
+        for marker in (
+            "429",
+            "rate limit",
+            "rate-limited",
+            "too many requests",
+            "quota",
+            "resource exhausted",
+        )
+    ):
+        return "[yellow]⏳ RATE LIMITED[/yellow]"
+
+    if status_code == 408 or any(
+        marker in error_text
+        for marker in (
+            "timeout",
+            "timed out",
+        )
+    ):
+        return "[yellow]⏱ TIMEOUT[/yellow]"
+
+    if any(
+        marker in error_text
+        for marker in (
+            "connection",
+            "network",
+            "dns",
+            "connection reset",
+            "connection refused",
+        )
+    ):
+        return "[red]🌐 NETWORK ERROR[/red]"
+
+    if status_code == 404 or any(
+        marker in error_text
+        for marker in (
+            "model not found",
+            "model_not_found",
+            "unknown model",
+            "invalid model",
+        )
+    ):
+        return "[yellow]⚠️ MODEL ERROR[/yellow]"
+
+    clean_error = " ".join(
+        str(error).split()
+    )
+
+    if not clean_error:
+        clean_error = error.__class__.__name__
+
+    return (
+        "[red]🔥 ERROR: "
+        f"{clean_error[:40]}[/red]"
+    )
+
+
+def _load_env_values(env_path: Path) -> dict[str, str]:
+    if not env_path.is_file():
+        return {}
+
+    values = dotenv_values(env_path)
+
+    return {
+        key: value.strip()
+        for key, value in values.items()
+        if isinstance(value, str) and value.strip()
+    }
+
+
+def run_doctor() -> None:
+    """Run provider credential and live API diagnostics."""
+
     console.print()
     print_mini_header()
-    
-    env_path = ".env"
-    if not os.path.exists(env_path):
-        console.print(Align.center("[red]❌ .env file not found! Run 'rdai init' first.[/red]\n"))
-        raise typer.Exit()
-        
-    # 🎯 FIX: Ebar amra rdai.yaml noy, direct .env scan korchi
-    env_vars = dotenv_values(env_path)
-    
-    # Filter only keys that end with _API_KEY
-    api_keys_to_test = {k: v for k, v in env_vars.items() if k.endswith("_API_KEY") and "CUSTOM" not in k}
-    
-    if not api_keys_to_test:
-        console.print(Align.center("[yellow]⚠️ No provider API keys found in .env file to test![/yellow]\n"))
-        raise typer.Exit()
-        
-    # 📊 The Ultimate Full-Scan Diagnostic Table
-    table = Table(title="🩺 Full .env API Key Diagnostics", title_style="bold cyan", border_style="cyan")
-    table.add_column("Provider", style="cyan", no_wrap=True)
-    table.add_column("Key Config", justify="center")
-    table.add_column("Live Check", justify="center")
-    table.add_column("Latency", justify="right")
-    
-    results = []
-    
-    # ⏳ Progress Spinner for Live Pinging
+
+    env_path = Path(".env").resolve()
+
+    if not env_path.is_file():
+        console.print(
+            Align.center(
+                "[red]❌ .env file not found! "
+                "Run 'rdai init' first.[/red]\n"
+            )
+        )
+        raise typer.Exit(code=1)
+
+    env_values = _load_env_values(env_path)
+
+    configured: list[
+        tuple[str, str, str]
+    ] = []
+
+    for provider, env_var in PROVIDER_ENV_KEYS.items():
+        value = _usable_value(
+            provider,
+            env_values.get(env_var),
+        )
+
+        if value is not None:
+            display_name = PROVIDER_DISPLAY_NAMES.get(
+                provider,
+                provider.replace("_", " ").title(),
+            )
+
+            configured.append(
+                (
+                    provider,
+                    display_name,
+                    value,
+                )
+            )
+
+    if not configured:
+        console.print(
+            Align.center(
+                "[yellow]⚠️ No configured provider "
+                "credentials found in .env.[/yellow]\n"
+            )
+        )
+        raise typer.Exit(code=0)
+
+    table = Table(
+        title="🩺 rdai Provider Diagnostics",
+        title_style="bold cyan",
+        border_style="cyan",
+    )
+
+    table.add_column(
+        "Provider",
+        style="cyan",
+        no_wrap=True,
+    )
+    table.add_column(
+        "Credential",
+        justify="center",
+    )
+    table.add_column(
+        "Live Check",
+        justify="center",
+    )
+    table.add_column(
+        "Latency",
+        justify="right",
+    )
+
+    results: list[
+        tuple[str, str, str, str]
+    ] = []
+
     with Progress(
         SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
+        TextColumn(
+            "[progress.description]{task.description}"
+        ),
         transient=True,
     ) as progress:
-        task = progress.add_task(f"[cyan]Scanning .env and pinging {len(api_keys_to_test)} providers...", total=len(api_keys_to_test))
-        
-        for env_var, key in api_keys_to_test.items():
-            # Extract provider name (e.g., GEMINI_API_KEY -> Gemini)
-            p_name = env_var.replace("_API_KEY", "").capitalize()
-            
-            # 1. Blank Key Check
-            if not key or len(key.strip()) < 5:
-                results.append((p_name, "[red]❌ MISSING[/red]", "[dim]-[/dim]", "[dim]-[/dim]"))
+        task = progress.add_task(
+            (
+                "[cyan]Checking configured providers "
+                f"({len(configured)})...[/cyan]"
+            ),
+            total=len(configured),
+        )
+
+        for (
+            provider_name,
+            display_name,
+            credential,
+        ) in configured:
+            provider_class = (
+                _BUILTIN_PROVIDER_CLASSES.get(
+                    provider_name
+                )
+            )
+
+            if provider_class is None:
+                results.append(
+                    (
+                        display_name,
+                        "[green]✔ DETECTED[/green]",
+                        "[yellow]⚠️ UNKNOWN[/yellow]",
+                        "[dim]-[/dim]",
+                    )
+                )
                 progress.advance(task)
                 continue
-                
-            key_status = "[green]✔ DETECTED[/green]"
-            
-            # 2. Match with our SDK classes
-            provider_class = _BUILTIN_PROVIDER_CLASSES.get(p_name.lower())
-            
-            if not provider_class:
-                results.append((p_name, key_status, "[yellow]⚠️ UNKNOWN[/yellow]", "[dim]-[/dim]"))
-                progress.advance(task)
-                continue
-                
-            # 3. Live Ping Execution
-            start_time = time.time()
+
+            start = time.monotonic()
+
             try:
-                # Attempt connection
-                adapter = provider_class(api_key=key.strip())
-                # Send a tiny prompt to verify authentication
-                adapter.generate("Reply OK") 
-                
-                latency = (time.time() - start_time) * 1000
-                results.append((p_name, key_status, "[green]🟢 ALIVE[/green]", f"[green]{latency:.0f}ms[/green]"))
-                
+                adapter = provider_class(
+                    api_key=credential
+                )
+
+                adapter.generate("Reply OK")
+
+                latency_ms = (
+                    time.monotonic() - start
+                ) * 1000
+
+                results.append(
+                    (
+                        display_name,
+                        "[green]✔ DETECTED[/green]",
+                        "[green]🟢 ALIVE[/green]",
+                        f"[green]{latency_ms:.0f}ms[/green]",
+                    )
+                )
+
             except NotImplementedError:
-                # Skeleton models er jonno graceful status
-                results.append((p_name, key_status, "[blue]🔍 FORMAT OK (SDK Pending)[/blue]", "[dim]-[/dim]"))
-            except Exception as e:
-                # Real error classification
-                error_str = str(e).lower()
-                if "401" in error_str or "auth" in error_str or "unauthorized" in error_str:
-                    diag_status = "[red]❌ INVALID API KEY[/red]"
-                elif "403" in error_str or "forbidden" in error_str:
-                    diag_status = "[red]🚫 ACCESS DENIED[/red]"
-                elif "429" in error_str or "rate" in error_str or "quota" in error_str:
-                    diag_status = "[yellow]⏳ RATE LIMITED[/yellow]"
-                elif "timeout" in error_str:
-                    diag_status = "[yellow]⏱ TIMEOUT[/yellow]"
-                elif "connection" in error_str or "network" in error_str:
-                    diag_status = "[red]🌐 NETWORK ERROR[/red]"
-                else:
-                    # Truncate unexpected errors so they fit in the table
-                    clean_err = str(e).replace('\n', ' ')[:20]
-                    diag_status = f"[red]🔥 ERROR: {clean_err}...[/red]"
-                    
-                results.append((p_name, key_status, diag_status, "[dim]-[/dim]"))
-                
+                results.append(
+                    (
+                        display_name,
+                        "[green]✔ DETECTED[/green]",
+                        "[blue]🔍 FORMAT OK[/blue]",
+                        "[dim]-[/dim]",
+                    )
+                )
+
+            except Exception as error:
+                results.append(
+                    (
+                        display_name,
+                        "[green]✔ DETECTED[/green]",
+                        _classify_error(error),
+                        "[dim]-[/dim]",
+                    )
+                )
+
             progress.advance(task)
-            
-    # Load data into table
-    for res in results:
-        table.add_row(*res)
-        
+
+    for result in results:
+        table.add_row(*result)
+
+    console.print()
     console.print(Align.center(table))
-    console.print(Align.center("\n[dim]Note: 'INVALID API KEY' indicates authentication failure. 'FORMAT OK' means SDK is pending.[/dim]\n"))
+    console.print(
+        Align.center(
+            "\n[dim]Credentials are never printed. "
+            "Live Check sends a minimal test request "
+            "to the configured provider.[/dim]\n"
+        )
+    )
