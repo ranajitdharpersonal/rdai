@@ -2,18 +2,22 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Sequence
 from typing import Any, Optional
 
+from rdai.providers.model_resolver import resolve_model
+
 
 class BaseProvider(ABC):
     """Abstract base class for all AI providers in rdai.
 
-    Model resolution is intentionally lightweight at this layer:
-    - an explicitly supplied model always wins;
-    - otherwise, a provider may offer available/fallback models;
-    - if nothing is available, ``None`` is returned so existing provider
-      defaults remain backward compatible.
+    Model resolution follows a safe, lazy strategy:
+
+    1. An explicitly supplied model always wins.
+    2. Static provider fallback models are used during initialization.
+    3. Runtime model discovery is opt-in and never happens during provider
+       construction.
+    4. Discovered models are cached to avoid repeated network requests.
     """
 
-    # Traits help the Smart Router choose the best model.
+    # Traits help the Smart Router choose the best provider/model.
     traits: Sequence[str] = []
 
     def __init__(
@@ -22,15 +26,107 @@ class BaseProvider(ABC):
         model: Optional[str] = None,
     ):
         self.api_key = api_key
-        self.model = self.resolve_model(model)
+
+        # Runtime discovery must NOT happen during construction.
+        # This keeps provider initialization fast and network-independent.
+        self.model = self.resolve_model(model, discover=False)
+
+        # Cached result of runtime model discovery.
+        # None means discovery has not happened yet.
+        self._discovered_models: Optional[tuple[str, ...]] = None
 
     @property
     def is_available(self) -> bool:
         """Return True when the provider has the credentials it needs."""
         return bool(self.api_key)
 
+    def available_models(self) -> Iterable[str]:
+        """Return models discovered from the provider.
+
+        Provider subclasses can override this to perform actual discovery.
+        This method should only contain the provider-specific discovery logic;
+        caching is handled by :meth:`discover_models`.
+        """
+        return ()
+
+    def fallback_models(self) -> Iterable[str]:
+        """Return provider-specific fallback models.
+
+        Provider subclasses should override this with safe fallback
+        candidates that can be used without runtime discovery.
+        """
+        return ()
+
+    def discover_models(self, force: bool = False) -> tuple[str, ...]:
+        """Discover and cache models exposed by the provider.
+
+        Args:
+            force: Re-run discovery even when a cached result exists.
+
+        Returns:
+            A tuple containing discovered model identifiers.
+
+        Discovery is lazy and never happens automatically during provider
+        construction.
+        """
+
+        if not self.is_available:
+            return ()
+
+        if self._discovered_models is not None and not force:
+            return self._discovered_models
+
+        try:
+            discovered = self.available_models()
+
+            normalized_models: list[str] = []
+
+            for candidate in discovered:
+                normalized = self._normalize_model(candidate)
+
+                if normalized is not None:
+                    normalized_models.append(normalized)
+
+            self._discovered_models = tuple(normalized_models)
+
+        except Exception:
+            # Discovery failure must never make the provider unusable.
+            # Keep an empty cache and let fallback models continue to work.
+            self._discovered_models = ()
+
+        return self._discovered_models
+
+    def resolve_model(
+        self,
+        requested_model: Optional[str] = None,
+        *,
+        discover: bool = False,
+    ) -> Optional[str]:
+        """Resolve the model to use for this provider.
+
+        Resolution order:
+
+        1. Explicitly requested model.
+        2. Discovered runtime model(s), when ``discover=True``.
+        3. Provider fallback model(s).
+
+        By default discovery is disabled so this method remains safe to call
+        during provider construction.
+        """
+
+        available_models: Iterable[str] = ()
+
+        if discover:
+            available_models = self.discover_models()
+
+        return resolve_model(
+            requested_model=requested_model,
+            available_models=available_models,
+            fallback_models=self.fallback_models(),
+        )
+
     @staticmethod
-    def normalize_model(model: Optional[str]) -> Optional[str]:
+    def _normalize_model(model: Optional[str]) -> Optional[str]:
         """Normalize a model name without changing its meaning."""
 
         if model is None:
@@ -42,38 +138,20 @@ class BaseProvider(ABC):
         normalized = model.strip()
         return normalized or None
 
-    def available_models(self) -> Iterable[str]:
-        """Return models discovered or advertised by this provider.
+    def refresh_model(self) -> Optional[str]:
+        """Refresh runtime discovery and resolve a model again.
 
-        Providers can override this later when they support runtime model
-        discovery. The base implementation deliberately returns nothing.
+        The provider's current model is replaced only when a valid model
+        candidate is found. Explicit provider configuration is preserved
+        because an explicit model continues to have highest priority.
         """
 
-        return ()
+        resolved = self.resolve_model(discover=True)
 
-    def fallback_models(self) -> Iterable[str]:
-        """Return provider-specific fallback models.
+        if resolved is not None:
+            self.model = resolved
 
-        Providers can override this later with safe fallback candidates.
-        """
-
-        return ()
-
-    def resolve_model(self, requested_model: Optional[str] = None) -> Optional[str]:
-        explicit = self.normalize_model(requested_model)
-        if explicit is not None:
-            return explicit
-
-        for candidates in (
-            self.available_models(),
-            self.fallback_models(),
-        ):
-            for candidate in candidates:
-                normalized = self.normalize_model(candidate)
-                if normalized is not None:
-                    return normalized
-                
-        return None
+        return self.model
 
     @abstractmethod
     def generate(self, prompt: str, **kwargs: Any) -> str:
