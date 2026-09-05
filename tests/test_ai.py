@@ -69,3 +69,11 @@ def test_ai_accepts_explicit_model_mapping_without_breaking_provider() -> None:
 
     assert response == "fake: hello"
     assert provider.model == "fake-model"
+    
+def test_registered_provider_has_canonical_name() -> None:
+    provider = FakeProvider()
+
+    ai = AI(providers=[provider])
+
+    assert provider.name == "fake"
+    assert [p.name for p in ai.registry.all_available()] == ["fake"]

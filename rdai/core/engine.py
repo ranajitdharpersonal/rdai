@@ -25,9 +25,12 @@ class ProviderRegistry:
             name = provider.__class__.__name__.replace(
                 "Provider",
                 "",
-            ).lower()
+                ).lower()
 
-        self._providers[name.lower()] = provider
+        canonical_name = name.lower().strip()
+
+        provider.name = canonical_name
+        self._providers[canonical_name] = provider
 
     def get(self, name: str) -> Optional[BaseProvider]:
         return self._providers.get(name.lower())
