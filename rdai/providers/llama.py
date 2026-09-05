@@ -8,13 +8,16 @@ from rdai.providers.base import BaseProvider
 
 
 class LlamaProvider(BaseProvider):
-    """Llama provider through the Together AI OpenAI-compatible endpoint."""
+    """Llama models through the Together AI API."""
 
     traits = (
         "open-source",
         "meta",
         "fast",
     )
+
+    models_endpoint = "https://api.together.ai/v1/models"
+    chat_endpoint = "https://api.together.ai/v1/chat/completions"
 
     def __init__(
         self,
@@ -26,13 +29,61 @@ class LlamaProvider(BaseProvider):
             model=model,
         )
 
-        self.endpoint = (
-            "https://api.together.xyz/v1/chat/completions"
-        )
+    def available_models(self) -> tuple[str, ...]:
+        """Discover chat-capable Llama-family models from Together."""
 
-    def fallback_models(self) -> tuple[str, ...]:
-        """Return the default Together AI Llama model."""
-        return ("meta-llama/Llama-3-70b-chat-hf",)
+        if not self.is_available:
+            return ()
+
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
+        try:
+            response = requests.get(
+                self.models_endpoint,
+                headers=headers,
+                timeout=15.0,
+            )
+            response.raise_for_status()
+
+            payload = response.json()
+
+            if not isinstance(payload, list):
+                return ()
+
+            models: list[str] = []
+
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+
+                model_id = item.get("id")
+                model_type = item.get("type")
+
+                if not isinstance(model_id, str):
+                    continue
+
+                model_id = model_id.strip()
+
+                if not model_id:
+                    continue
+
+                if model_type not in (None, "chat", "language", "code"):
+                    continue
+
+                lowered = model_id.lower()
+
+                if "llama" not in lowered:
+                    continue
+
+                models.append(model_id)
+
+            return tuple(models)
+
+        except Exception:
+            return ()
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate a response through Together AI."""
@@ -40,10 +91,7 @@ class LlamaProvider(BaseProvider):
         if not self.is_available:
             raise ValueError("Llama API key is missing.")
 
-        if not self.model:
-            raise RuntimeError(
-                "No Llama model is configured or available."
-            )
+        model = self.ensure_model()
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -51,7 +99,7 @@ class LlamaProvider(BaseProvider):
         }
 
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [
                 {
                     "role": "user",
@@ -62,8 +110,10 @@ class LlamaProvider(BaseProvider):
 
         timeout = kwargs.pop("timeout", 15.0)
 
+        payload.update(kwargs)
+
         response = requests.post(
-            self.endpoint,
+            self.chat_endpoint,
             headers=headers,
             json=payload,
             timeout=timeout,
@@ -73,12 +123,19 @@ class LlamaProvider(BaseProvider):
         try:
             data = response.json()
             content = data["choices"][0]["message"]["content"]
-        except (ValueError, KeyError, IndexError, TypeError) as exc:
+        except (
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as exc:
             raise RuntimeError(
                 "Llama returned an unexpected response format."
             ) from exc
 
         if content is None:
-            raise RuntimeError("Llama returned an empty response.")
+            raise RuntimeError(
+                "Llama returned an empty response."
+            )
 
         return str(content)

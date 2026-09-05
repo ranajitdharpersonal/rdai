@@ -6,7 +6,11 @@ from rdai.providers.base import BaseProvider
 
 
 class OpenAIProvider(BaseProvider):
-    """OpenAI provider adapter."""
+    """OpenAI provider adapter.
+
+    Model selection is fully discovery-based unless the user explicitly
+    supplies a model.
+    """
 
     traits = (
         "coding",
@@ -19,11 +23,10 @@ class OpenAIProvider(BaseProvider):
         api_key: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
-        super().__init__(api_key=api_key, model=model)
-
-    def fallback_models(self) -> tuple[str, ...]:
-        """Return a safe fallback model for OpenAI."""
-        return ("gpt-4o-mini",)
+        super().__init__(
+            api_key=api_key,
+            model=model,
+        )
 
     def available_models(self) -> tuple[str, ...]:
         """Discover models currently exposed by the OpenAI account."""
@@ -51,8 +54,7 @@ class OpenAIProvider(BaseProvider):
             return tuple(models)
 
         except Exception:
-            # Discovery is best-effort. A failed discovery must not break
-            # normal provider usage or fallback model resolution.
+            # Discovery is best-effort. Never invent a model.
             return ()
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
@@ -61,10 +63,7 @@ class OpenAIProvider(BaseProvider):
         if not self.is_available:
             raise ValueError("OpenAI API key is missing.")
 
-        if not self.model:
-            raise RuntimeError(
-                "No OpenAI model is configured or available."
-            )
+        model = self.ensure_model()
 
         try:
             from openai import OpenAI
@@ -76,7 +75,7 @@ class OpenAIProvider(BaseProvider):
         client = OpenAI(api_key=self.api_key)
 
         response = client.chat.completions.create(
-            model=self.model,
+            model=model,
             messages=[
                 {
                     "role": "user",
@@ -86,9 +85,14 @@ class OpenAIProvider(BaseProvider):
             **kwargs,
         )
 
-        content = response.choices[0].message.content
+        try:
+            content = response.choices[0].message.content
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise RuntimeError(
+                "OpenAI returned an unexpected response format."
+            ) from exc
 
         if content is None:
             raise RuntimeError("OpenAI returned an empty response.")
 
-        return content
+        return str(content)

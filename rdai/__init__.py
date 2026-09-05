@@ -162,7 +162,7 @@ class AI:
             # 🎯 FIX: Smartly pass the model ONLY if it is explicitly provided.
             # Otherwise, let the provider use its own safe default!
             model_val = normalized_models.get(provider_name)
-            
+
             if model_val:
                 provider = provider_class(
                     api_key=api_keys.get(provider_name),
@@ -172,7 +172,7 @@ class AI:
                 provider = provider_class(
                     api_key=api_keys.get(provider_name),
                 )
-                
+
             self.registry.register(provider)
 
     def generate(

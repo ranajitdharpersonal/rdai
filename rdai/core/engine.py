@@ -25,17 +25,24 @@ class ProviderRegistry:
             name = provider.__class__.__name__.replace(
                 "Provider",
                 "",
-                ).lower()
+            ).lower()
 
         canonical_name = name.lower().strip()
 
         provider.name = canonical_name
         self._providers[canonical_name] = provider
 
-    def get(self, name: str) -> Optional[BaseProvider]:
-        return self._providers.get(name.lower())
+    def get(
+        self,
+        name: str,
+    ) -> Optional[BaseProvider]:
+        """Return a provider by canonical name."""
+        return self._providers.get(
+            name.lower().strip()
+        )
 
     def all_available(self) -> list[BaseProvider]:
+        """Return all currently configured providers."""
         return [
             provider
             for provider in self._providers.values()
@@ -46,10 +53,12 @@ class ProviderRegistry:
         self,
         traits: Sequence[str],
     ) -> list[BaseProvider]:
+        """Return available providers matching any requested trait."""
+
         requested = {
-            trait.lower()
+            trait.lower().strip()
             for trait in traits
-            if isinstance(trait, str)
+            if isinstance(trait, str) and trait.strip()
         }
 
         if not requested:
@@ -62,9 +71,9 @@ class ProviderRegistry:
                 continue
 
             provider_traits = {
-                trait.lower()
+                trait.lower().strip()
                 for trait in provider.traits
-                if isinstance(trait, str)
+                if isinstance(trait, str) and trait.strip()
             }
 
             if requested.intersection(provider_traits):
@@ -74,6 +83,8 @@ class ProviderRegistry:
 
 
 class Router:
+    """Provider routing policy."""
+
     def __init__(
         self,
         registry: ProviderRegistry,
@@ -82,13 +93,19 @@ class Router:
     ) -> None:
         self.registry = registry
         self.strategy = strategy.lower().strip()
-        self.priority = list(priority) if priority else []
+        self.priority = [
+            name.lower().strip()
+            for name in (priority or [])
+            if isinstance(name, str) and name.strip()
+        ]
 
     def get_route(
         self,
         prompt: str = "",
         traits: Sequence[str] | None = None,
     ) -> list[BaseProvider]:
+        """Return providers in the order they should be attempted."""
+
         if self.strategy == "manual":
             return self._manual_route()
 
@@ -101,6 +118,8 @@ class Router:
         return self.registry.all_available()
 
     def _manual_route(self) -> list[BaseProvider]:
+        """Build the configured manual provider order."""
+
         available = self.registry.all_available()
 
         if not self.priority:
@@ -112,7 +131,8 @@ class Router:
             provider = self.registry.get(name)
 
             if provider and provider.is_available:
-                route.append(provider)
+                if provider not in route:
+                    route.append(provider)
 
         for provider in available:
             if provider not in route:
@@ -125,13 +145,15 @@ class Router:
         prompt: str,
         traits: Sequence[str] | None,
     ) -> list[BaseProvider]:
+        """Rank providers by requested traits, then preserve availability order."""
+
         available = self.registry.all_available()
 
         if not available:
             return []
 
         requested_traits = [
-            trait
+            trait.strip().lower()
             for trait in (traits or [])
             if isinstance(trait, str) and trait.strip()
         ]
@@ -223,17 +245,32 @@ class Failover:
         ] = {}
 
     @staticmethod
-    def _provider_key(provider: BaseProvider) -> int:
+    def _provider_key(
+        provider: BaseProvider,
+    ) -> int:
         return id(provider)
 
     @staticmethod
-    def _status_code(error: Exception) -> Optional[int]:
-        status_code = getattr(error, "status_code", None)
+    def _status_code(
+        error: Exception,
+    ) -> Optional[int]:
+        """Extract an HTTP-like status code from an exception."""
+
+        status_code = getattr(
+            error,
+            "status_code",
+            None,
+        )
 
         if isinstance(status_code, int):
             return status_code
 
-        response = getattr(error, "response", None)
+        response = getattr(
+            error,
+            "response",
+            None,
+        )
+
         response_status = getattr(
             response,
             "status_code",
@@ -246,7 +283,12 @@ class Failover:
         return None
 
     @classmethod
-    def _is_transient_error(cls, error: Exception) -> bool:
+    def _is_transient_error(
+        cls,
+        error: Exception,
+    ) -> bool:
+        """Return True for retryable provider/service failures."""
+
         status_code = cls._status_code(error)
 
         if status_code is not None:
@@ -292,7 +334,12 @@ class Failover:
         )
 
     @classmethod
-    def _is_model_error(cls, error: Exception) -> bool:
+    def _is_model_error(
+        cls,
+        error: Exception,
+    ) -> bool:
+        """Return True for errors indicating model availability problems."""
+
         status_code = cls._status_code(error)
 
         if status_code == 404:
@@ -308,11 +355,28 @@ class Failover:
                 "unknown model",
                 "invalid model",
                 "model does not exist",
+                "no such model",
+                "model is not available",
+                "model is unavailable",
+                "model unavailable",
             )
         )
 
     @staticmethod
-    def _has_explicit_model(provider: BaseProvider) -> bool:
+    def _has_explicit_model(
+        provider: BaseProvider,
+    ) -> bool:
+        """Return True only when the user explicitly selected a model."""
+
+        requested_model = getattr(
+            provider,
+            "requested_model",
+            None,
+        )
+
+        if isinstance(requested_model, str):
+            return bool(requested_model.strip())
+
         requested_model = getattr(
             provider,
             "_requested_model",
@@ -328,6 +392,8 @@ class Failover:
         self,
         provider: BaseProvider,
     ) -> dict[str, float | int]:
+        """Return the circuit state for one provider."""
+
         key = self._provider_key(provider)
 
         state = self.circuit_breakers.get(key)
@@ -346,7 +412,11 @@ class Failover:
         self,
         state: dict[str, float | int],
     ) -> bool:
-        failures = int(state["failures"])
+        """Return whether a provider's circuit permits a request."""
+
+        failures = int(
+            state["failures"]
+        )
 
         if failures < self.failure_threshold:
             return True
@@ -363,6 +433,8 @@ class Failover:
     def _reset_state(
         state: dict[str, float | int],
     ) -> None:
+        """Reset a provider circuit after successful generation."""
+
         state["failures"] = 0
         state["last_failure"] = 0.0
 
@@ -370,6 +442,8 @@ class Failover:
         self,
         state: dict[str, float | int],
     ) -> None:
+        """Record one transient provider failure."""
+
         state["failures"] = (
             int(state["failures"]) + 1
         )
@@ -378,8 +452,14 @@ class Failover:
     def _recover_model(
         self,
         provider: BaseProvider,
+        failed_model: Optional[str],
     ) -> bool:
-        """Refresh the provider model after a model-related failure."""
+        """Refresh discovered models after a model-related generation failure.
+
+        Explicitly selected user models are never replaced.
+        Discovered models can be excluded so the next discovered candidate
+        gets a chance.
+        """
 
         if self._has_explicit_model(provider):
             return False
@@ -400,7 +480,21 @@ class Failover:
         )
 
         try:
-            refreshed_model = refresh_model()
+            refreshed_model = refresh_model(
+                failed_model=failed_model,
+            )
+        except TypeError:
+            # Backward compatibility for custom providers implementing the
+            # older no-argument refresh_model() method.
+            try:
+                refreshed_model = refresh_model()
+            except Exception as error:
+                logger.warning(
+                    "%s model refresh failed: %s",
+                    provider.__class__.__name__,
+                    error,
+                )
+                return False
         except Exception as error:
             logger.warning(
                 "%s model refresh failed: %s",
@@ -430,29 +524,38 @@ class Failover:
         prompt: str,
         kwargs: dict[str, Any],
     ) -> str:
-        """Attempt a provider, including one model-recovery retry."""
+        """Attempt one provider, including one model-recovery retry."""
 
         try:
-            response = provider.generate(
+            return provider.generate(
                 prompt,
                 **kwargs,
             )
-
-            return response
 
         except Exception as error:
             if not self._is_model_error(error):
                 raise
 
+            failed_model = getattr(
+                provider,
+                "model",
+                None,
+            )
+
             logger.warning(
                 "%s failed because of model '%s': %s",
                 provider.__class__.__name__,
-                getattr(provider, "model", None),
+                failed_model,
                 error,
             )
 
             recovered = self._recover_model(
-                provider
+                provider,
+                failed_model=(
+                    failed_model
+                    if isinstance(failed_model, str)
+                    else None
+                ),
             )
 
             if not recovered:
@@ -475,6 +578,8 @@ class Failover:
         traits: Sequence[str] | None = None,
         **kwargs: Any,
     ) -> str:
+        """Generate a response through the routed failover chain."""
+
         providers = self.router.get_route(
             prompt,
             traits=traits,
@@ -500,6 +605,7 @@ class Failover:
                 continue
 
             attempted_provider = True
+
             provider_name = provider.__class__.__name__
 
             try:

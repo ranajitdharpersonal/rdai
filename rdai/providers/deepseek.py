@@ -8,7 +8,11 @@ from rdai.providers.base import BaseProvider
 
 
 class DeepseekProvider(BaseProvider):
-    """DeepSeek provider adapter."""
+    """DeepSeek provider adapter.
+
+    Model selection is discovery-based unless the user explicitly
+    supplies a model.
+    """
 
     traits = (
         "coding",
@@ -16,30 +20,34 @@ class DeepseekProvider(BaseProvider):
         "fast",
     )
 
+    models_endpoint = "https://api.deepseek.com/models"
+    chat_endpoint = "https://api.deepseek.com/v1/chat/completions"
+
     def __init__(
         self,
         api_key: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
-        super().__init__(api_key=api_key, model=model)
-
-    def fallback_models(self) -> tuple[str, ...]:
-        """Return a safe fallback model for DeepSeek."""
-        return ("deepseek-v4-flash",)
+        super().__init__(
+            api_key=api_key,
+            model=model,
+        )
 
     def available_models(self) -> tuple[str, ...]:
-        """Discover models currently exposed by DeepSeek."""
+        """Discover currently available DeepSeek models."""
 
         if not self.is_available:
             return ()
 
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type": "application/json",
+        }
+
         try:
             response = requests.get(
-                "https://api.deepseek.com/models",
-                headers={
-                    "Authorization": f"Bearer {self.api_key}",
-                    "Content-Type": "application/json",
-                },
+                self.models_endpoint,
+                headers=headers,
                 timeout=15.0,
             )
             response.raise_for_status()
@@ -68,8 +76,6 @@ class DeepseekProvider(BaseProvider):
             return tuple(models)
 
         except Exception:
-            # Discovery is best-effort. A failed discovery must not
-            # break normal provider usage.
             return ()
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
@@ -78,10 +84,7 @@ class DeepseekProvider(BaseProvider):
         if not self.is_available:
             raise ValueError("DeepSeek API key is missing.")
 
-        if not self.model:
-            raise RuntimeError(
-                "No DeepSeek model is configured or available."
-            )
+        model = self.ensure_model()
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
@@ -89,7 +92,7 @@ class DeepseekProvider(BaseProvider):
         }
 
         payload = {
-            "model": self.model,
+            "model": model,
             "messages": [
                 {
                     "role": "user",
@@ -100,24 +103,32 @@ class DeepseekProvider(BaseProvider):
 
         timeout = kwargs.pop("timeout", 15.0)
 
+        payload.update(kwargs)
+
         response = requests.post(
-            "https://api.deepseek.com/v1/chat/completions",
+            self.chat_endpoint,
             headers=headers,
             json=payload,
             timeout=timeout,
         )
         response.raise_for_status()
 
-        data = response.json()
-
         try:
+            data = response.json()
             content = data["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
+        except (
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as exc:
             raise RuntimeError(
                 "DeepSeek returned an unexpected response format."
             ) from exc
 
         if content is None:
-            raise RuntimeError("DeepSeek returned an empty response.")
+            raise RuntimeError(
+                "DeepSeek returned an empty response."
+            )
 
         return str(content)

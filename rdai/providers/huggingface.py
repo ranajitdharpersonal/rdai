@@ -16,7 +16,8 @@ class HuggingfaceProvider(BaseProvider):
         "community",
     )
 
-    base_endpoint = "https://api-inference.huggingface.co/models"
+    models_endpoint = "https://huggingface.co/api/models"
+    chat_endpoint = "https://router.huggingface.co/v1/chat/completions"
 
     def __init__(
         self,
@@ -28,51 +29,77 @@ class HuggingfaceProvider(BaseProvider):
             model=model,
         )
 
-    def fallback_models(self) -> tuple[str, ...]:
-        """Return the default Hugging Face model."""
-        return ("mistralai/Mistral-7B-Instruct-v0.2",)
+    def available_models(self) -> tuple[str, ...]:
+        """Discover text-generation models available through HF inference."""
+
+        if not self.is_available:
+            return ()
+
+        try:
+            response = requests.get(
+                self.models_endpoint,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                },
+                params={
+                    "inference_provider": "hf-inference",
+                    "pipeline_tag": "text-generation",
+                    "limit": 100,
+                },
+                timeout=15.0,
+            )
+            response.raise_for_status()
+
+            payload = response.json()
+
+            if not isinstance(payload, list):
+                return ()
+
+            models: list[str] = []
+
+            for item in payload:
+                if not isinstance(item, dict):
+                    continue
+
+                model_id = item.get("id")
+
+                if isinstance(model_id, str) and model_id.strip():
+                    models.append(model_id.strip())
+
+            return tuple(models)
+
+        except Exception:
+            return ()
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
-        """Generate a response through Hugging Face inference."""
+        """Generate a response through Hugging Face Inference Providers."""
 
         if not self.is_available:
             raise ValueError("HuggingFace API key is missing.")
 
-        if not self.model:
-            raise RuntimeError(
-                "No HuggingFace model is configured or available."
-            )
+        model = self.ensure_model()
 
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
         }
 
-        formatted_prompt = f"<s>[INST] {prompt} [/INST]"
-
-        parameters = {
-            "max_new_tokens": 512,
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
         }
-
-        # Allow callers to override inference parameters without replacing
-        # the complete request structure.
-        supplied_parameters = kwargs.pop("parameters", None)
-
-        if isinstance(supplied_parameters, dict):
-            parameters.update(supplied_parameters)
 
         timeout = kwargs.pop("timeout", 15.0)
 
-        payload = {
-            "inputs": formatted_prompt,
-            "parameters": parameters,
-        }
-
-        # Preserve any additional top-level inference options.
         payload.update(kwargs)
 
         response = requests.post(
-            f"{self.base_endpoint}/{self.model}",
+            self.chat_endpoint,
             headers=headers,
             json=payload,
             timeout=timeout,
@@ -80,34 +107,21 @@ class HuggingfaceProvider(BaseProvider):
         response.raise_for_status()
 
         try:
-            result = response.json()
-        except ValueError as exc:
+            data = response.json()
+            content = data["choices"][0]["message"]["content"]
+        except (
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as exc:
             raise RuntimeError(
-                "HuggingFace returned an invalid JSON response."
+                "HuggingFace returned an unexpected response format."
             ) from exc
 
-        if not isinstance(result, list) or not result:
-            raise RuntimeError(
-                "HuggingFace returned an unexpected response format."
-            )
-
-        first_result = result[0]
-
-        if not isinstance(first_result, dict):
-            raise RuntimeError(
-                "HuggingFace returned an unexpected response format."
-            )
-
-        generated_text = first_result.get("generated_text")
-
-        if not isinstance(generated_text, str) or not generated_text.strip():
+        if content is None:
             raise RuntimeError(
                 "HuggingFace returned an empty response."
             )
 
-        # Some text-generation models include the original prompt in the
-        # generated text. Remove it only when it appears as a prefix.
-        if generated_text.startswith(formatted_prompt):
-            generated_text = generated_text[len(formatted_prompt):]
-
-        return generated_text.strip()
+        return str(content)

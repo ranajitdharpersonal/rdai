@@ -21,17 +21,12 @@ class AwsBedrockProvider(BaseProvider):
         api_key: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
-        # ``api_key`` is retained for backward compatibility with rdai's
-        # provider interface. For Bedrock it acts as the configured AWS
-        # region, while credentials are resolved by boto3's normal chain.
+        # ``api_key`` is retained for compatibility with the provider
+        # interface. For Bedrock it represents the configured AWS region.
         super().__init__(
             api_key=api_key,
             model=model,
         )
-
-    def fallback_models(self) -> tuple[str, ...]:
-        """Return the default Bedrock model identifier."""
-        return ("anthropic.claude-3-haiku-20240307-v1:0",)
 
     @property
     def region(self) -> str:
@@ -48,23 +43,95 @@ class AwsBedrockProvider(BaseProvider):
             return False
 
         try:
-            session = boto3.Session()
+            session = boto3.Session(
+                region_name=self.region,
+            )
             return session.get_credentials() is not None
         except Exception:
             return False
+
+    def available_models(self) -> tuple[str, ...]:
+        """Discover active text-output foundation models."""
+
+        if not self.is_available:
+            return ()
+
+        try:
+            import boto3
+        except ImportError:
+            return ()
+
+        try:
+            client = boto3.client(
+                "bedrock",
+                region_name=self.region,
+            )
+
+            response = client.list_foundation_models(
+                by_output_modality="TEXT",
+                by_inference_type="ON_DEMAND",
+            )
+
+            summaries = response.get("modelSummaries", [])
+
+            if not isinstance(summaries, list):
+                return ()
+
+            models: list[str] = []
+
+            for item in summaries:
+                if not isinstance(item, dict):
+                    continue
+
+                model_id = item.get("modelId")
+
+                if not isinstance(model_id, str):
+                    continue
+
+                model_id = model_id.strip()
+
+                if not model_id:
+                    continue
+
+                lifecycle = item.get("modelLifecycle", {})
+
+                if isinstance(lifecycle, dict):
+                    status = lifecycle.get("status")
+
+                    if status and status != "ACTIVE":
+                        continue
+
+                input_modalities = item.get(
+                    "inputModalities",
+                    [],
+                )
+
+                if isinstance(input_modalities, list):
+                    normalized_inputs = {
+                        str(value).upper()
+                        for value in input_modalities
+                    }
+
+                    if "TEXT" not in normalized_inputs:
+                        continue
+
+                models.append(model_id)
+
+            return tuple(models)
+
+        except Exception:
+            return ()
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate a response through AWS Bedrock Converse."""
 
         if not self.is_available:
             raise ValueError(
-                "AWS Bedrock credentials are missing or boto3 is not installed."
+                "AWS Bedrock credentials are missing or boto3 "
+                "is not installed."
             )
 
-        if not self.model:
-            raise RuntimeError(
-                "No AWS Bedrock model is configured or available."
-            )
+        model = self.ensure_model()
 
         try:
             import boto3
@@ -79,7 +146,7 @@ class AwsBedrockProvider(BaseProvider):
         )
 
         converse_kwargs: dict[str, Any] = {
-            "modelId": self.model,
+            "modelId": model,
             "messages": [
                 {
                     "role": "user",
@@ -92,8 +159,6 @@ class AwsBedrockProvider(BaseProvider):
             ],
         }
 
-        # Forward supported Converse options without forcing callers
-        # to use a provider-specific client directly.
         for option in (
             "system",
             "inferenceConfig",
@@ -106,12 +171,18 @@ class AwsBedrockProvider(BaseProvider):
             if value is not None:
                 converse_kwargs[option] = value
 
-        response = client.converse(**converse_kwargs)
+        response = client.converse(
+            **converse_kwargs,
+        )
 
         try:
             content_blocks = response["output"]["message"]["content"]
             content = content_blocks[0]["text"]
-        except (KeyError, IndexError, TypeError) as exc:
+        except (
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as exc:
             raise RuntimeError(
                 "AWS Bedrock returned an unexpected response format."
             ) from exc

@@ -23,16 +23,22 @@ class VertexaiProvider(BaseProvider):
         api_key: Optional[str] = None,
         model: Optional[str] = None,
     ) -> None:
-        # ``api_key`` is retained for compatibility with the common provider
-        # interface. For Vertex AI it represents the configured GCP project ID.
+        # ``api_key`` is retained for compatibility with the provider
+        # interface. For Vertex AI it represents the GCP project ID.
         super().__init__(
             api_key=api_key,
             model=model,
         )
 
-    def fallback_models(self) -> tuple[str, ...]:
-        """Return the default Vertex AI Gemini model."""
-        return ("gemini-2.5-flash",)
+        self.client = (
+            genai.Client(
+                vertexai=True,
+                project=self.project_id,
+                location=self.default_location,
+            )
+            if self.project_id
+            else None
+        )
 
     @property
     def project_id(self) -> Optional[str]:
@@ -41,47 +47,85 @@ class VertexaiProvider(BaseProvider):
             return None
 
         project_id = self.api_key.strip()
+
         return project_id or None
 
     @property
     def is_available(self) -> bool:
-        """Return True when a GCP project is configured.
-
-        Actual Google Cloud credentials are resolved by the google-genai SDK
-        when a request is made.
-        """
+        """Return True when a GCP project is configured."""
         return self.project_id is not None
+
+    def available_models(self) -> tuple[str, ...]:
+        """Discover Vertex AI publisher models supporting generation."""
+
+        if not self.is_available or self.client is None:
+            return ()
+
+        try:
+            models = self.client.models.list()
+
+            discovered: list[str] = []
+
+            for model in models:
+                model_name = getattr(
+                    model,
+                    "name",
+                    None,
+                )
+
+                if not isinstance(model_name, str):
+                    continue
+
+                model_name = model_name.strip()
+
+                if not model_name:
+                    continue
+
+                supported_actions = getattr(
+                    model,
+                    "supported_actions",
+                    (),
+                )
+
+                if supported_actions:
+                    if "generateContent" not in supported_actions:
+                        continue
+
+                if model_name.startswith("models/"):
+                    model_name = model_name[len("models/"):]
+
+                discovered.append(model_name)
+
+            return tuple(discovered)
+
+        except Exception:
+            return ()
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate a response through Vertex AI."""
 
-        if not self.is_available:
+        if not self.is_available or self.client is None:
             raise ValueError(
                 "GCP Project ID is missing for VertexAI."
             )
 
-        if not self.model:
-            raise RuntimeError(
-                "No VertexAI model is configured or available."
-            )
+        model = self.ensure_model()
 
-        client = genai.Client(
-            vertexai=True,
-            project=self.project_id,
-            location=kwargs.pop("location", self.default_location),
-        )
-
-        response = client.models.generate_content(
-            model=self.model,
+        response = self.client.models.generate_content(
+            model=model,
             contents=prompt,
             **kwargs,
         )
 
-        content = getattr(response, "text", None)
+        content = getattr(
+            response,
+            "text",
+            None,
+        )
 
         if content is None:
             raise RuntimeError(
                 "VertexAI returned an empty response."
             )
 
-        return content
+        return str(content)

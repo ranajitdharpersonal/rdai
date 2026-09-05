@@ -40,6 +40,7 @@ class FakeProvider(BaseProvider):
         self._requested_model = model if explicit_model else None
         self.refreshed_model = refreshed_model
         self.refresh_calls = 0
+        self.refresh_failed_models: list[str | None] = []
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         self.calls.append((prompt, kwargs))
@@ -54,8 +55,16 @@ class FakeProvider(BaseProvider):
 
         return outcome
 
-    def refresh_model(self) -> str | None:
+    def refresh_model(
+        self,
+        *,
+
+        failed_model: str | None = None,
+    ) -> str | None:
+
+
         self.refresh_calls += 1
+        self.refresh_failed_models.append(failed_model)
 
         self.model = self.refreshed_model
         return self.model
@@ -221,3 +230,22 @@ def test_model_error_does_not_increment_circuit_failures() -> None:
     state = failover.circuit_breakers[id(primary)]
 
     assert state["failures"] == 0
+
+
+def test_model_error_passes_failed_model_to_refresh() -> None:
+    primary = FakeProvider(
+        "primary",
+        [
+            ModelNotFoundError("model not found"),
+            "recovered",
+        ],
+        model="old-model",
+        refreshed_model="new-model",
+    )
+
+    failover = _failover_with(primary)
+
+    response = failover.generate("hello")
+
+    assert response == "recovered"
+    assert primary.refresh_failed_models == ["old-model"]

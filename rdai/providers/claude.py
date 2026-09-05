@@ -8,13 +8,21 @@ from rdai.providers.base import BaseProvider
 
 
 class ClaudeProvider(BaseProvider):
-    """Anthropic Claude provider adapter."""
+    """Anthropic Claude provider adapter.
+
+    Model selection is discovery-based unless the user explicitly
+    supplies a model.
+    """
 
     traits = (
         "creative",
         "analytical",
         "reasoning",
     )
+
+    api_version = "2023-06-01"
+    models_endpoint = "https://api.anthropic.com/v1/models"
+    messages_endpoint = "https://api.anthropic.com/v1/messages"
 
     def __init__(
         self,
@@ -26,9 +34,77 @@ class ClaudeProvider(BaseProvider):
             model=model,
         )
 
-    def fallback_models(self) -> tuple[str, ...]:
-        """Return the default Claude fallback model."""
-        return ("claude-3-haiku-20240307",)
+    def available_models(self) -> tuple[str, ...]:
+        """Discover models currently available to the Anthropic account."""
+
+        if not self.is_available:
+            return ()
+
+        headers = {
+            "x-api-key": self.api_key,
+            "anthropic-version": self.api_version,
+        }
+
+        models: list[str] = []
+        after_id: Optional[str] = None
+
+        try:
+            while True:
+                params: dict[str, Any] = {
+                    "limit": 1000,
+                }
+
+                if after_id:
+                    params["after_id"] = after_id
+
+                response = requests.get(
+                    self.models_endpoint,
+                    headers=headers,
+                    params=params,
+                    timeout=15.0,
+                )
+                response.raise_for_status()
+
+                payload = response.json()
+
+                if not isinstance(payload, dict):
+                    return tuple(models)
+
+                data = payload.get("data", [])
+
+                if not isinstance(data, list):
+                    return tuple(models)
+
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+
+                    model_id = item.get("id")
+
+                    if (
+                        isinstance(model_id, str)
+                        and model_id.strip()
+                    ):
+                        models.append(model_id.strip())
+
+                if not payload.get("has_more"):
+                    break
+
+                next_after_id = payload.get("last_id")
+
+                if not isinstance(next_after_id, str):
+                    break
+
+                if not next_after_id.strip():
+                    break
+
+                after_id = next_after_id.strip()
+
+            return tuple(models)
+
+        except Exception:
+            # Discovery is best-effort. Never invent a model.
+            return ()
 
     def generate(self, prompt: str, **kwargs: Any) -> str:
         """Generate a response through the Anthropic Messages API."""
@@ -36,14 +112,11 @@ class ClaudeProvider(BaseProvider):
         if not self.is_available:
             raise ValueError("Claude API key is missing.")
 
-        if not self.model:
-            raise RuntimeError(
-                "No Claude model is configured or available."
-            )
+        model = self.ensure_model()
 
         headers = {
             "x-api-key": self.api_key,
-            "anthropic-version": "2023-06-01",
+            "anthropic-version": self.api_version,
             "content-type": "application/json",
         }
 
@@ -51,7 +124,7 @@ class ClaudeProvider(BaseProvider):
         timeout = kwargs.pop("timeout", 15.0)
 
         payload = {
-            "model": self.model,
+            "model": model,
             "max_tokens": max_tokens,
             "messages": [
                 {
@@ -63,22 +136,30 @@ class ClaudeProvider(BaseProvider):
         }
 
         response = requests.post(
-            "https://api.anthropic.com/v1/messages",
+            self.messages_endpoint,
             headers=headers,
             json=payload,
             timeout=timeout,
         )
+
         response.raise_for_status()
 
         try:
             data = response.json()
             content = data["content"][0]["text"]
-        except (ValueError, KeyError, IndexError, TypeError) as exc:
+        except (
+            ValueError,
+            KeyError,
+            IndexError,
+            TypeError,
+        ) as exc:
             raise RuntimeError(
                 "Claude returned an unexpected response format."
             ) from exc
 
         if content is None:
-            raise RuntimeError("Claude returned an empty response.")
+            raise RuntimeError(
+                "Claude returned an empty response."
+            )
 
         return str(content)
