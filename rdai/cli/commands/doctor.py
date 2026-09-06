@@ -2,10 +2,8 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Any
 
 import typer
-from dotenv import dotenv_values
 from rich.align import Align
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -13,9 +11,9 @@ from rich.table import Table
 
 from rdai import _BUILTIN_PROVIDER_CLASSES, __version__
 from rdai.config.discovery import (
-    API_KEY_PLACEHOLDERS,
     PROVIDER_DISPLAY_NAMES,
     PROVIDER_ENV_KEYS,
+    discover_api_keys,
 )
 
 console = Console()
@@ -32,37 +30,20 @@ def print_mini_header() -> None:
         "[dim]────────────────────────────────────────────────────────────[/dim]"
     )
 
-    console.print(Align.center(header))
+    console.print(
+        Align.center(header)
+    )
     console.print()
-
-
-def _usable_value(
-    provider: str,
-    value: Any,
-) -> str | None:
-    if not isinstance(value, str):
-        return None
-
-    stripped = value.strip()
-
-    if not stripped:
-        return None
-
-    placeholder = API_KEY_PLACEHOLDERS.get(provider)
-
-    if (
-        placeholder
-        and stripped.casefold() == placeholder.casefold()
-    ):
-        return None
-
-    return stripped
 
 
 def _classify_error(error: Exception) -> str:
     error_text = str(error).lower()
 
-    status_code = getattr(error, "status_code", None)
+    status_code = getattr(
+        error,
+        "status_code",
+        None,
+    )
 
     if status_code == 401 or any(
         marker in error_text
@@ -128,6 +109,11 @@ def _classify_error(error: Exception) -> str:
             "model_not_found",
             "unknown model",
             "invalid model",
+            "model does not exist",
+            "no such model",
+            "model is not available",
+            "model is unavailable",
+            "model unavailable",
         )
     ):
         return "[yellow]⚠️ MODEL ERROR[/yellow]"
@@ -145,19 +131,6 @@ def _classify_error(error: Exception) -> str:
     )
 
 
-def _load_env_values(env_path: Path) -> dict[str, str]:
-    if not env_path.is_file():
-        return {}
-
-    values = dotenv_values(env_path)
-
-    return {
-        key: value.strip()
-        for key, value in values.items()
-        if isinstance(value, str) and value.strip()
-    }
-
-
 def run_doctor() -> None:
     """Run provider credential and live API diagnostics."""
 
@@ -166,49 +139,46 @@ def run_doctor() -> None:
 
     env_path = Path(".env").resolve()
 
-    if not env_path.is_file():
+    # API discovery intentionally checks both:
+    # 1. real process environment variables
+    # 2. the local .env file
+    #
+    # Process environment values take precedence, matching the SDK.
+    keys = discover_api_keys(
+        env_path,
+    )
+
+    if not keys:
         console.print(
             Align.center(
-                "[red]❌ .env file not found! "
-                "Run 'rdai init' first.[/red]\n"
+                "[yellow]⚠️ No configured provider "
+                "credentials found in environment or .env.[/yellow]\n"
             )
         )
-        raise typer.Exit(code=1)
-
-    env_values = _load_env_values(env_path)
+        raise typer.Exit(code=0)
 
     configured: list[
         tuple[str, str, str]
     ] = []
 
     for provider, env_var in PROVIDER_ENV_KEYS.items():
-        value = _usable_value(
+        credential = keys.get(provider)
+
+        if credential is None:
+            continue
+
+        display_name = PROVIDER_DISPLAY_NAMES.get(
             provider,
-            env_values.get(env_var),
+            provider.replace("_", " ").title(),
         )
 
-        if value is not None:
-            display_name = PROVIDER_DISPLAY_NAMES.get(
+        configured.append(
+            (
                 provider,
-                provider.replace("_", " ").title(),
-            )
-
-            configured.append(
-                (
-                    provider,
-                    display_name,
-                    value,
-                )
-            )
-
-    if not configured:
-        console.print(
-            Align.center(
-                "[yellow]⚠️ No configured provider "
-                "credentials found in .env.[/yellow]\n"
+                display_name,
+                credential,
             )
         )
-        raise typer.Exit(code=0)
 
     table = Table(
         title="🩺 rdai Provider Diagnostics",
@@ -247,8 +217,8 @@ def run_doctor() -> None:
     ) as progress:
         task = progress.add_task(
             (
-                "[cyan]Checking configured providers "
-                f"({len(configured)})...[/cyan]"
+                "Checking configured providers "
+                f"({len(configured)})..."
             ),
             total=len(configured),
         )
@@ -283,7 +253,9 @@ def run_doctor() -> None:
                     api_key=credential
                 )
 
-                adapter.generate("Reply OK")
+                adapter.generate(
+                    "Reply OK"
+                )
 
                 latency_ms = (
                     time.monotonic() - start
@@ -321,10 +293,14 @@ def run_doctor() -> None:
             progress.advance(task)
 
     for result in results:
-        table.add_row(*result)
+        table.add_row(
+            *result
+        )
 
     console.print()
-    console.print(Align.center(table))
+    console.print(
+        Align.center(table)
+    )
     console.print(
         Align.center(
             "\n[dim]Credentials are never printed. "

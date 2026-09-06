@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rdai"
-version = "1.0.2"
-description = "One interface for resilient, multi-provider AI generation."
+version = "1.1.0"
+description = "One Interface. Any AI. Unbreakable Auto-Failover."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -13,9 +13,20 @@ authors = [
   { name = "Ranajit Dhar", email = "contact@ranajitdhar.in" },
 ]
 keywords = [
-  "ai", "llm", "cli", "failover", "gemini", "groq", "openai",
-  "orchestrator", "multi-agent", "generative-ai", "claude", 
-  "vertex-ai", "ai-router", "load-balancing"
+  "ai",
+  "llm",
+  "cli",
+  "failover",
+  "gemini",
+  "groq",
+  "openai",
+  "orchestrator",
+  "multi-agent",
+  "generative-ai",
+  "claude",
+  "vertex-ai",
+  "ai-router",
+  "load-balancing",
 ]
 classifiers = [
   "Development Status :: 4 - Beta",
@@ -38,7 +49,7 @@ dependencies = [
   "requests>=2.32.0",
   "rich>=13.9.0",
   "typer>=0.12.5",
-  "boto3>=1.34.0"
+  "boto3>=1.34.0",
 ]
 
 [project.optional-dependencies]

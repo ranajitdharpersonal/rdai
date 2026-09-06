@@ -1,40 +1,66 @@
+from __future__ import annotations
+
 import typer
-import yaml
-import os
-from rich.console import Console
 from rich.align import Align
+from rich.console import Console
+
+from rdai import __version__
+from rdai.config.loader import ConfigError, load_config
 
 console = Console()
 
-def print_mini_header():
+
+def print_mini_header() -> None:
     header = (
-        "[bold cyan]🚀 rdai (Ranajit Dhar AI)[/bold cyan] [bold white]v1.0.2[/bold white]\n"
-        "[bold yellow]👑 Created by:[/bold yellow] [bold white]Ranajit Dhar[/bold white] | [bold yellow]🌐 Website:[/bold yellow] [bold cyan]https://ranajitdhar.in[/bold cyan]\n"
+        f"[bold cyan]🚀 rdai (Ranajit Dhar AI)[/bold cyan] "
+        f"[bold white]v{__version__}[/bold white]\n"
+        "[bold yellow]👑 Created by:[/bold yellow] "
+        "[bold white]Ranajit Dhar[/bold white] | "
+        "[bold yellow]🌐 Website:[/bold yellow] "
+        "[bold cyan]https://ranajitdhar.in[/bold cyan]\n"
         "[dim]────────────────────────────────────────────────────────────[/dim]"
     )
-    console.print(Align.center(header))
+
+    console.print(
+        Align.center(header)
+    )
     console.print()
 
-def run_config():
-    """View your current routing configuration."""
+
+def run_config() -> None:
+    """View the current rdai routing configuration."""
+
     console.print()
     print_mini_header()
-    
-    if not os.path.exists("rdai.yaml"):
-        console.print(Align.center("[red]❌ rdai.yaml not found! Run 'rdai init' first.[/red]\n"))
-        raise typer.Exit()
-        
-    with open("rdai.yaml", "r") as f:
-        config = yaml.safe_load(f)
-        
-    # Formatting output centrally
-    config_text = "[bold white]⚙️  Current System Configuration:[/bold white]\n\n"
-    config_text += f"  • Routing Strategy : [bold cyan]{config.get('strategy', 'unknown').upper()}[/bold cyan]\n"
-    
-    # 🎯 FIX: Check both new and old config keys
-    providers = config.get("providers", config.get("provider_order", []))
-    chain = " ➔ ".join([p.capitalize() for p in providers])
-    config_text += f"  • Failover Chain   : [bold yellow]{chain}[/bold yellow]\n"
-    
-    console.print(Align.center(config_text))
+
+    try:
+        config = load_config()
+
+    except ConfigError as error:
+        console.print(
+            Align.center(
+                f"[red]❌ Invalid rdai.yaml:[/red] {error}\n"
+            )
+        )
+        raise typer.Exit(code=1) from error
+
+    strategy = config.strategy.upper()
+
+    if config.providers:
+        chain = " ➔ ".join(
+            provider.replace("_", " ").title()
+            for provider in config.providers
+        )
+    else:
+        chain = "Automatic provider discovery"
+
+    config_text = (
+        "[bold white]⚙️  Current System Configuration:[/bold white]\n\n"
+        f"  • Routing Strategy : [bold cyan]{strategy}[/bold cyan]\n"
+        f"  • Provider Chain   : [bold yellow]{chain}[/bold yellow]\n"
+    )
+
+    console.print(
+        Align.center(config_text)
+    )
     console.print()

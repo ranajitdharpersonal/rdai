@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import questionary
@@ -11,6 +10,7 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
 
+from rdai import __version__
 from rdai.config.discovery import (
     PROVIDER_DISPLAY_NAMES,
     PROVIDER_ENV_KEYS,
@@ -18,7 +18,7 @@ from rdai.config.discovery import (
 
 console = Console()
 
-INIT_CONTENT = r"""[bold cyan]
+INIT_CONTENT = rf"""[bold cyan]
 ██████╗ ██████╗  █████╗ ██╗
 ██╔══██╗██╔══██╗██╔══██╗██║
 ██████╔╝██║  ██║███████║██║
@@ -27,7 +27,7 @@ INIT_CONTENT = r"""[bold cyan]
 ╚═╝  ╚═╝╚═════╝ ╚═╝  ╚═╝╚═╝[/bold cyan]
 
 [bold yellow]⚙️  SYSTEM INITIALIZATION SEQUENCE[/bold yellow]
-[bold white]Version: v1.0.2[/bold white]
+[bold white]Version: v{__version__}[/bold white]
 
 [dim]────────────────────────────────────────────────────────[/dim]
 [bold yellow]👑 Created by :[/bold yellow] [bold white]Ranajit Dhar[/bold white]

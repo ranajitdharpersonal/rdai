@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Iterator
+
+import pytest
 
 from rdai.core.engine import Failover, ProviderRegistry, Router
 from rdai.providers.base import BaseProvider
@@ -18,6 +20,7 @@ class ModelNotFoundError(Exception):
     """Minimal HTTP-like error object that represents a 404 model error."""
 
     status_code = 404
+
 
 class ModelAccessError(Exception):
     """Minimal HTTP-like error object for inaccessible discovered models."""
@@ -63,16 +66,59 @@ class FakeProvider(BaseProvider):
     def refresh_model(
         self,
         *,
-
         failed_model: str | None = None,
     ) -> str | None:
-
-
         self.refresh_calls += 1
         self.refresh_failed_models.append(failed_model)
 
         self.model = self.refreshed_model
         return self.model
+
+
+class StreamProvider(FakeProvider):
+    """Fake provider with deterministic streaming outcomes."""
+
+    def __init__(
+        self,
+        name: str,
+        stream_outcomes: list[str | BaseException | list[str]],
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            name=name,
+            outcomes=[],
+            **kwargs,
+        )
+        self._stream_outcomes = list(stream_outcomes)
+        self.stream_calls: list[tuple[str, dict[str, Any]]] = []
+
+    def stream(
+        self,
+        prompt: str,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        self.stream_calls.append(
+            (
+                prompt,
+                kwargs,
+            )
+        )
+
+        if not self._stream_outcomes:
+            yield "default"
+            return
+
+        outcome = self._stream_outcomes.pop(0)
+
+        if isinstance(outcome, BaseException):
+            raise outcome
+
+        if isinstance(outcome, list):
+            for chunk in outcome:
+                yield chunk
+            return
+
+        yield str(outcome)
 
 
 def _register(
@@ -277,3 +323,165 @@ def test_model_access_error_refreshes_discovered_model() -> None:
     assert primary.refresh_calls == 1
     assert primary.refresh_failed_models == ["restricted-model"]
     assert primary.model == "available-model"
+
+
+def test_stream_returns_all_chunks_from_primary_provider() -> None:
+    primary = StreamProvider(
+        "primary",
+        [["hello", " ", "world"]],
+    )
+
+    failover = _failover_with(primary)
+
+    chunks = list(
+        failover.stream("hello")
+    )
+
+    assert chunks == ["hello", " ", "world"]
+    assert primary.stream_calls == [("hello", {})]
+
+
+def test_stream_transient_failure_before_output_moves_to_next_provider() -> None:
+    primary = StreamProvider(
+        "primary",
+        [TimeoutError("stream timed out")],
+    )
+    fallback = StreamProvider(
+        "fallback",
+        [["served", " by", " fallback"]],
+    )
+
+    failover = _failover_with(
+        primary,
+        fallback,
+    )
+
+    chunks = list(
+        failover.stream("hello")
+    )
+
+    assert chunks == [
+        "served",
+        " by",
+        " fallback",
+    ]
+    assert primary.stream_calls == [("hello", {})]
+    assert fallback.stream_calls == [("hello", {})]
+
+
+def test_stream_model_error_refreshes_and_retries_same_provider() -> None:
+    primary = StreamProvider(
+        "primary",
+        [
+            ModelNotFoundError("model not found"),
+            ["recovered", " stream"],
+        ],
+        model="old-model",
+        refreshed_model="new-model",
+    )
+
+    failover = _failover_with(primary)
+
+    chunks = list(
+        failover.stream("hello")
+    )
+
+    assert chunks == [
+        "recovered",
+        " stream",
+    ]
+    assert primary.refresh_calls == 1
+    assert primary.refresh_failed_models == ["old-model"]
+    assert primary.model == "new-model"
+    assert len(primary.stream_calls) == 2
+
+
+def test_stream_does_not_fallback_after_partial_output() -> None:
+    class PartialFailureProvider(StreamProvider):
+        def stream(
+            self,
+            prompt: str,
+            **kwargs: Any,
+        ) -> Iterator[str]:
+            self.stream_calls.append(
+                (
+                    prompt,
+                    kwargs,
+                )
+            )
+
+            yield "partial"
+
+            raise TimeoutError(
+                "stream failed after partial output"
+            )
+
+    primary = PartialFailureProvider(
+        "primary",
+        [],
+    )
+    fallback = StreamProvider(
+        "fallback",
+        [["fallback", " output"]],
+    )
+
+    failover = _failover_with(
+        primary,
+        fallback,
+    )
+
+    with pytest.raises(
+        TimeoutError,
+        match="partial output",
+    ):
+        list(
+            failover.stream("hello")
+        )
+
+    assert fallback.stream_calls == []
+
+
+def test_stream_partial_model_error_does_not_switch_provider() -> None:
+    class PartialModelFailureProvider(StreamProvider):
+        def stream(
+            self,
+            prompt: str,
+            **kwargs: Any,
+        ) -> Iterator[str]:
+            self.stream_calls.append(
+                (
+                    prompt,
+                    kwargs,
+                )
+            )
+
+            yield "partial"
+
+            raise ModelNotFoundError(
+                "model not found after partial output"
+            )
+
+    primary = PartialModelFailureProvider(
+        "primary",
+        [],
+    )
+    fallback = StreamProvider(
+        "fallback",
+        [["fallback"]],
+    )
+
+    failover = _failover_with(
+        primary,
+        fallback,
+    )
+
+    with pytest.raises(
+        ModelNotFoundError,
+        match="partial output",
+    ):
+        list(
+            failover.stream("hello")
+        )
+
+    assert primary.refresh_calls == 0
+    assert fallback.stream_calls == []
