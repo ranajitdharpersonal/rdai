@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from collections.abc import Iterator, Sequence
-from typing import Any, Optional
+from typing import Any
 
 from rdai.providers.base import BaseProvider
 
@@ -42,7 +42,7 @@ class ProviderRegistry:
     def get(
         self,
         name: str,
-    ) -> Optional[BaseProvider]:
+    ) -> BaseProvider | None:
         """Return a provider by canonical name."""
 
         if not isinstance(name, str):
@@ -274,7 +274,7 @@ class Failover:
     @staticmethod
     def _status_code(
         error: Exception,
-    ) -> Optional[int]:
+    ) -> int | None:
         """Extract an HTTP-like status code from an exception."""
 
         status_code = getattr(
@@ -493,7 +493,7 @@ class Failover:
     def _recover_model(
         self,
         provider: BaseProvider,
-        failed_model: Optional[str],
+        failed_model: str | None,
     ) -> bool:
         """Refresh discovered models after a model-related failure."""
 
@@ -714,7 +714,7 @@ class Failover:
                 "the request! Check your .env API keys."
             )
 
-        last_transient_error: Optional[Exception] = None
+        last_transient_error: Exception | None = None
         attempted_provider = False
 
         for provider in providers:
@@ -815,7 +815,7 @@ class Failover:
                 "the request! Check your .env API keys."
             )
 
-        last_transient_error: Optional[Exception] = None
+        last_transient_error: Exception | None = None
         attempted_provider = False
 
         for provider in providers:

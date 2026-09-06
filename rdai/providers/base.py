@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from collections.abc import Iterable, Iterator, Sequence
-from typing import Any, Optional
+from typing import Any
 
 from rdai.providers.model_resolver import normalize_model, resolve_model
 
@@ -29,13 +29,13 @@ class BaseProvider(ABC):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        model: str | None = None,
     ) -> None:
         self.api_key = api_key
         self._requested_model = normalize_model(model)
-        self._model: Optional[str] = self._requested_model
-        self._discovered_models: Optional[tuple[str, ...]] = None
+        self._model: str | None = self._requested_model
+        self._discovered_models: tuple[str, ...] | None = None
         self._excluded_models: set[str] = set()
 
     @property
@@ -45,7 +45,7 @@ class BaseProvider(ABC):
         return bool(self.api_key)
 
     @property
-    def model(self) -> Optional[str]:
+    def model(self) -> str | None:
         """Return the active model, discovering one lazily when necessary."""
 
         requested_model = getattr(
@@ -69,7 +69,7 @@ class BaseProvider(ABC):
         return self._resolve_discovered_model()
 
     @model.setter
-    def model(self, value: Optional[str]) -> None:
+    def model(self, value: str | None) -> None:
         """Set the runtime model while preserving explicit user intent."""
 
         normalized = normalize_model(value)
@@ -87,7 +87,7 @@ class BaseProvider(ABC):
         self._model = normalized
 
     @property
-    def requested_model(self) -> Optional[str]:
+    def requested_model(self) -> str | None:
         """Return the model explicitly supplied by the user, if any."""
 
         return getattr(
@@ -179,10 +179,10 @@ class BaseProvider(ABC):
 
     def resolve_model(
         self,
-        requested_model: Optional[str] = None,
+        requested_model: str | None = None,
         *,
         discover: bool = True,
-    ) -> Optional[str]:
+    ) -> str | None:
         """Resolve the active model from explicit intent or discovery."""
 
         explicit = (
@@ -204,7 +204,7 @@ class BaseProvider(ABC):
             available_models=available_models,
         )
 
-    def _resolve_discovered_model(self) -> Optional[str]:
+    def _resolve_discovered_model(self) -> str | None:
         """Select and cache the first valid discovered candidate."""
 
         resolved = self.resolve_model(
@@ -242,8 +242,8 @@ class BaseProvider(ABC):
     def refresh_model(
         self,
         *,
-        failed_model: Optional[str] = None,
-    ) -> Optional[str]:
+        failed_model: str | None = None,
+    ) -> str | None:
         """Refresh discovered models and select the next viable candidate."""
 
         if self.requested_model is not None:

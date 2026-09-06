@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from typing import Any, Optional
+from typing import Any
 
 from google import genai
 
@@ -25,8 +25,8 @@ class GeminiProvider(BaseProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        model: str | None = None,
     ) -> None:
         super().__init__(
             api_key=api_key,

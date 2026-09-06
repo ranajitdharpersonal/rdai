@@ -161,7 +161,7 @@ def run_doctor() -> None:
         tuple[str, str, str]
     ] = []
 
-    for provider, env_var in PROVIDER_ENV_KEYS.items():
+    for provider, _env_var in PROVIDER_ENV_KEYS.items():
         credential = keys.get(provider)
 
         if credential is None:

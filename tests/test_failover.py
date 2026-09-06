@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Iterator
+from collections.abc import Iterator
+from typing import Any
 
 import pytest
 
@@ -114,8 +115,7 @@ class StreamProvider(FakeProvider):
             raise outcome
 
         if isinstance(outcome, list):
-            for chunk in outcome:
-                yield chunk
+            yield from outcome
             return
 
         yield str(outcome)

@@ -8,7 +8,6 @@ from typer.testing import CliRunner
 
 from rdai.cli.main import app
 
-
 runner = CliRunner()
 
 

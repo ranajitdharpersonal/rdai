@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any, Optional
+from typing import Any
 
 import requests
 
@@ -27,8 +27,8 @@ class ClaudeProvider(BaseProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        model: str | None = None,
     ) -> None:
         super().__init__(
             api_key=api_key,
@@ -51,7 +51,7 @@ class ClaudeProvider(BaseProvider):
             return ()
 
         models: list[str] = []
-        after_id: Optional[str] = None
+        after_id: str | None = None
 
         try:
             while True:

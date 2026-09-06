@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
-from typing import Any, Optional
+from typing import Any
 
 from google import genai
 
@@ -21,8 +21,8 @@ class VertexaiProvider(BaseProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        model: str | None = None,
     ) -> None:
         # ``api_key`` is retained for compatibility with the provider
         # interface. For Vertex AI it represents the configured GCP project ID.
@@ -42,7 +42,7 @@ class VertexaiProvider(BaseProvider):
         )
 
     @property
-    def project_id(self) -> Optional[str]:
+    def project_id(self) -> str | None:
         """Return the configured GCP project ID."""
 
         if not self.api_key:

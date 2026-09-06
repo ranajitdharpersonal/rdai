@@ -1,10 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Optional
 
 
-def normalize_model(model: Optional[str]) -> Optional[str]:
+def normalize_model(model: str | None) -> str | None:
     """Normalize a model identifier without changing its meaning."""
     if model is None:
         return None
@@ -18,9 +17,9 @@ def normalize_model(model: Optional[str]) -> Optional[str]:
 
 
 def resolve_model(
-    requested_model: Optional[str] = None,
+    requested_model: str | None = None,
     available_models: Iterable[str] = (),
-) -> Optional[str]:
+) -> str | None:
     """Resolve a model without using hardcoded provider defaults.
 
     Resolution order:

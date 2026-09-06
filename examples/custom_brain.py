@@ -1,6 +1,7 @@
-from rdai.providers.base import BaseProvider
+
 from rdai import AI
-import requests
+from rdai.providers.base import BaseProvider
+
 
 # User tar nijer private ba notun custom provider banacche
 class NexusCustomProvider(BaseProvider):

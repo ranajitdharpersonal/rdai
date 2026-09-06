@@ -15,19 +15,18 @@ from typing import Any, Final
 from .config.discovery import discover_api_keys, normalize_provider_name
 from .config.loader import RdaiConfig, load_config
 from .core.engine import Failover, ProviderRegistry, Router
-
+from .providers.aws_bedrock import AwsBedrockProvider
 from .providers.base import BaseProvider
+from .providers.claude import ClaudeProvider
+from .providers.deepseek import DeepseekProvider
 from .providers.gemini import GeminiProvider
 from .providers.groq import GroqProvider
-from .providers.openai import OpenAIProvider
-from .providers.vertexai import VertexaiProvider
-from .providers.claude import ClaudeProvider
-from .providers.aws_bedrock import AwsBedrockProvider
-from .providers.deepseek import DeepseekProvider
-from .providers.qwen import QwenProvider
+from .providers.huggingface import HuggingfaceProvider
 from .providers.llama import LlamaProvider
 from .providers.mistral import MistralProvider
-from .providers.huggingface import HuggingfaceProvider
+from .providers.openai import OpenAIProvider
+from .providers.qwen import QwenProvider
+from .providers.vertexai import VertexaiProvider
 
 __version__ = "1.1.0"
 

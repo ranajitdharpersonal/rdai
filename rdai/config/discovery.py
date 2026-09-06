@@ -15,7 +15,6 @@ from typing import Final
 
 from dotenv import dotenv_values
 
-
 DEFAULT_ENV_FILENAME: Final = ".env"
 
 # Keep this mapping in one place so the CLI, configuration layer, and SDK all

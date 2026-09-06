@@ -17,7 +17,6 @@ from dotenv import load_dotenv
 
 from .discovery import DEFAULT_ENV_FILENAME, normalize_provider_name
 
-
 DEFAULT_CONFIG_FILENAME: Final = "rdai.yaml"
 VALID_STRATEGIES: Final[frozenset[str]] = frozenset({"smart", "manual"})
 
@@ -89,7 +88,7 @@ class RdaiConfig:
         value: Mapping[str, Any] | None,
         *,
         path: Path | None = None,
-    ) -> "RdaiConfig":
+    ) -> RdaiConfig:
         """Build a config object from parsed YAML data.
 
         ``provider_order`` is accepted as a legacy/explicit spelling, while

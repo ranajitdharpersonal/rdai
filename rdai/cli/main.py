@@ -13,7 +13,6 @@ from rdai.cli.commands.generate import run_generate
 from rdai.cli.commands.health import run_health
 from rdai.cli.commands.init import setup_init
 
-
 console = Console()
 
 app = typer.Typer(

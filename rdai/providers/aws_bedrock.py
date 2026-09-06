@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any, Optional
+from typing import Any
 
 from rdai.providers.base import BaseProvider
 
@@ -19,8 +19,8 @@ class AwsBedrockProvider(BaseProvider):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
-        model: Optional[str] = None,
+        api_key: str | None = None,
+        model: str | None = None,
     ) -> None:
         # ``api_key`` is retained for compatibility with the provider
         # interface. For Bedrock it represents the configured AWS region.
