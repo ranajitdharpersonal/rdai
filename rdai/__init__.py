@@ -1,14 +1,14 @@
 """Public SDK interface for rdai.
 
-The :class:`AI` facade deliberately keeps application code independent from a
-specific model vendor.  It discovers local credentials, constructs provider
-adapters at the package boundary, and delegates all selection and retry policy
-to the provider-agnostic core.
+The :class:`AI` facade keeps application code independent from a specific
+model vendor. It discovers local credentials, constructs provider adapters at
+the package boundary, and delegates routing, retry, failover, and streaming
+policy to the provider-agnostic core.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Final
 
@@ -29,9 +29,11 @@ from .providers.llama import LlamaProvider
 from .providers.mistral import MistralProvider
 from .providers.huggingface import HuggingfaceProvider
 
-__version__ = "1.0.2"
+__version__ = "1.1.0"
 
-_BUILTIN_PROVIDER_CLASSES: Final[dict[str, type[BaseProvider]]] = {
+_BUILTIN_PROVIDER_CLASSES: Final[
+    dict[str, type[BaseProvider]]
+] = {
     "gemini": GeminiProvider,
     "groq": GroqProvider,
     "openai": OpenAIProvider,
@@ -44,31 +46,14 @@ _BUILTIN_PROVIDER_CLASSES: Final[dict[str, type[BaseProvider]]] = {
     "mistral": MistralProvider,
     "huggingface": HuggingfaceProvider,
 }
-_DEFAULT_PROVIDER_ORDER: Final[tuple[str, ...]] = tuple(_BUILTIN_PROVIDER_CLASSES)
+
+_DEFAULT_PROVIDER_ORDER: Final[
+    tuple[str, ...]
+] = tuple(_BUILTIN_PROVIDER_CLASSES)
 
 
 class AI:
-    """A resilient, provider-agnostic AI generation client.
-
-    Args:
-        strategy: ``"smart"`` chooses a provider based on prompt/trait fit;
-            ``"manual"`` follows the configured provider order.  When omitted,
-            the value in ``rdai.yaml`` is used.
-        config_path: Optional path to an ``rdai.yaml`` routing-policy file.
-        env_file: Optional path to a dotenv file holding provider credentials.
-            By default, rdai checks the dotenv file beside ``config_path``.
-        providers: Optional provider instances.  This is useful for custom
-            adapters and tests; injected providers are registered without the
-            core ever knowing their concrete type.
-        api_keys: Optional provider-name to API-key mapping.  These values take
-            precedence over automatic environment discovery.
-        models: Optional provider-name to model-name mapping for built-in
-            providers.
-        failure_threshold: Number of consecutive transient failures before a
-            provider circuit opens.
-        recovery_timeout: Seconds an open circuit stays unavailable before a
-            probe is allowed again.
-    """
+    """A resilient, provider-agnostic AI generation client."""
 
     def __init__(
         self,
@@ -87,31 +72,49 @@ class AI:
             if config_path is not None
             else (Path.cwd() / "rdai.yaml").resolve()
         )
+
         effective_env_file = (
             Path(env_file).expanduser().resolve()
             if env_file is not None
             else config_file.parent / ".env"
         )
 
-        self.config: RdaiConfig = load_config(config_file, env_file=effective_env_file)
-        self.strategy = strategy if strategy is not None else self.config.strategy
+        self.config: RdaiConfig = load_config(
+            config_file,
+            env_file=effective_env_file,
+        )
+
+        self.strategy = (
+            strategy
+            if strategy is not None
+            else self.config.strategy
+        )
+
         self.registry = ProviderRegistry()
 
         if providers is None:
             self._register_builtin_providers(
-                api_keys=self._resolved_api_keys(effective_env_file, api_keys),
+                api_keys=self._resolved_api_keys(
+                    effective_env_file,
+                    api_keys,
+                ),
                 models=models,
             )
         else:
             for provider in providers:
                 self.registry.register(provider)
 
-        configured_order = self.config.provider_order or _DEFAULT_PROVIDER_ORDER
+        configured_order = (
+            self.config.provider_order
+            or _DEFAULT_PROVIDER_ORDER
+        )
+
         self.router = Router(
             self.registry,
             strategy=self.strategy,
             priority=configured_order,
         )
+
         self.failover = Failover(
             self.router,
             failure_threshold=failure_threshold,
@@ -123,16 +126,29 @@ class AI:
         env_file: Path,
         explicit_api_keys: Mapping[str, str] | None,
     ) -> dict[str, str]:
-        """Merge discovered and explicitly supplied keys without leaking them."""
+        """Merge discovered and explicitly supplied API keys."""
 
-        discovered = discover_api_keys(env_file)
+        discovered = discover_api_keys(
+            env_file
+        )
+
         if explicit_api_keys is None:
             return discovered
 
         for provider, key in explicit_api_keys.items():
-            if not isinstance(key, str) or not key.strip():
+            if not isinstance(
+                key,
+                str,
+            ):
                 continue
-            discovered[normalize_provider_name(provider)] = key.strip()
+
+            if not key.strip():
+                continue
+
+            discovered[
+                normalize_provider_name(provider)
+            ] = key.strip()
+
         return discovered
 
     def _register_builtin_providers(
@@ -141,39 +157,63 @@ class AI:
         api_keys: Mapping[str, str],
         models: Mapping[str, str] | None,
     ) -> None:
-        """Register built-in adapters at the package edge.
+        """Register built-in providers at the package boundary."""
 
-        Instantiating an adapter without a credential is intentional.  It gives
-        routing one stable registry while each adapter's ``is_available`` flag
-        prevents an unconfigured provider from ever receiving a request.
-        """
+        selected = (
+            self.config.provider_order
+            or _DEFAULT_PROVIDER_ORDER
+        )
 
-        selected = self.config.provider_order or _DEFAULT_PROVIDER_ORDER
         normalized_models = {
             normalize_provider_name(provider): model
             for provider, model in (models or {}).items()
-            if isinstance(model, str) and model.strip()
+            if isinstance(model, str)
+            and model.strip()
         }
 
         for provider_name in selected:
-            provider_class = _BUILTIN_PROVIDER_CLASSES.get(provider_name)
+            provider_class = _BUILTIN_PROVIDER_CLASSES.get(
+                provider_name
+            )
+
             if provider_class is None:
                 continue
-            # 🎯 FIX: Smartly pass the model ONLY if it is explicitly provided.
-            # Otherwise, let the provider use its own safe default!
-            model_val = normalized_models.get(provider_name)
+
+            model_val = normalized_models.get(
+                provider_name
+            )
 
             if model_val:
                 provider = provider_class(
-                    api_key=api_keys.get(provider_name),
+                    api_key=api_keys.get(
+                        provider_name
+                    ),
                     model=model_val,
                 )
             else:
                 provider = provider_class(
-                    api_key=api_keys.get(provider_name),
+                    api_key=api_keys.get(
+                        provider_name
+                    ),
                 )
 
-            self.registry.register(provider)
+            self.registry.register(
+                provider
+            )
+
+    @staticmethod
+    def _validate_prompt(
+        prompt: str,
+    ) -> None:
+        """Validate a public generation prompt."""
+
+        if not isinstance(
+            prompt,
+            str,
+        ) or not prompt.strip():
+            raise ValueError(
+                "prompt must be a non-empty string."
+            )
 
     def generate(
         self,
@@ -183,9 +223,38 @@ class AI:
         **kwargs: Any,
     ) -> str:
         """Generate text through the selected provider with automatic failover."""
-        if not isinstance(prompt, str) or not prompt.strip():
-            raise ValueError("prompt must be a non-empty string.")
-        return self.failover.generate(prompt, traits=traits, **kwargs)
+
+        self._validate_prompt(
+            prompt
+        )
+
+        return self.failover.generate(
+            prompt,
+            traits=traits,
+            **kwargs,
+        )
+
+    def stream(
+        self,
+        prompt: str,
+        *,
+        traits: Sequence[str] | None = None,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        """Stream text through the selected provider with automatic failover."""
+
+        self._validate_prompt(
+            prompt
+        )
+
+        return self.failover.stream(
+            prompt,
+            traits=traits,
+            **kwargs,
+        )
 
 
-__all__ = ["AI", "__version__"]
+__all__ = [
+    "AI",
+    "__version__",
+]

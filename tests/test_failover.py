@@ -19,6 +19,11 @@ class ModelNotFoundError(Exception):
 
     status_code = 404
 
+class ModelAccessError(Exception):
+    """Minimal HTTP-like error object for inaccessible discovered models."""
+
+    status_code = 400
+
 
 class FakeProvider(BaseProvider):
     is_available = True
@@ -249,3 +254,26 @@ def test_model_error_passes_failed_model_to_refresh() -> None:
 
     assert response == "recovered"
     assert primary.refresh_failed_models == ["old-model"]
+
+
+def test_model_access_error_refreshes_discovered_model() -> None:
+    primary = FakeProvider(
+        "primary",
+        [
+            ModelAccessError(
+                "model_terms_required: requires terms acceptance"
+            ),
+            "served after model refresh",
+        ],
+        model="restricted-model",
+        refreshed_model="available-model",
+    )
+
+    failover = _failover_with(primary)
+
+    response = failover.generate("hello")
+
+    assert response == "served after model refresh"
+    assert primary.refresh_calls == 1
+    assert primary.refresh_failed_models == ["restricted-model"]
+    assert primary.model == "available-model"

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterable, Iterator
 from typing import Any, Optional
 
 from rdai.providers.base import BaseProvider
@@ -8,8 +9,9 @@ from rdai.providers.base import BaseProvider
 class OpenAIProvider(BaseProvider):
     """OpenAI provider adapter.
 
-    Model selection is fully discovery-based unless the user explicitly
-    supplies a model.
+    Model selection is discovery-based unless the user explicitly supplies
+    a model. Discovered models are filtered to identifiers that are suitable
+    for text/chat generation through this adapter.
     """
 
     traits = (
@@ -40,16 +42,30 @@ class OpenAIProvider(BaseProvider):
             return ()
 
         try:
-            client = OpenAI(api_key=self.api_key)
+            client = OpenAI(
+                api_key=self.api_key,
+            )
+
             response = client.models.list()
 
             models: list[str] = []
 
             for model in response.data:
-                model_id = getattr(model, "id", None)
+                model_id = getattr(
+                    model,
+                    "id",
+                    None,
+                )
 
-                if isinstance(model_id, str) and model_id.strip():
-                    models.append(model_id.strip())
+                if not (
+                    isinstance(model_id, str)
+                    and model_id.strip()
+                ):
+                    continue
+
+                models.append(
+                    model_id.strip()
+                )
 
             return tuple(models)
 
@@ -57,13 +73,73 @@ class OpenAIProvider(BaseProvider):
             # Discovery is best-effort. Never invent a model.
             return ()
 
-    def generate(self, prompt: str, **kwargs: Any) -> str:
-        """Generate a response using OpenAI chat completions."""
+    def filter_models(
+        self,
+        models: Iterable[str],
+    ) -> Iterable[str]:
+        """Keep models suitable for standard text/chat generation.
 
-        if not self.is_available:
-            raise ValueError("OpenAI API key is missing.")
+        OpenAI exposes multiple specialized model families through the same
+        catalog. This adapter uses text chat completions, so clearly
+        incompatible categories are excluded by capability/category markers.
+        """
 
-        model = self.ensure_model()
+        filtered: list[str] = []
+
+        excluded_prefixes = (
+            "whisper",
+            "gpt-image",
+            "chatgpt-image",
+            "dall-e",
+        )
+
+        excluded_markers = (
+            "embedding",
+            "moderation",
+            "transcribe",
+            "tts",
+            "text-to-speech",
+            "realtime",
+            "audio",
+        )
+
+        for model in models:
+            normalized = model.strip()
+
+            if not normalized:
+                continue
+
+            lowered = normalized.lower()
+
+            if any(
+                lowered.startswith(prefix)
+                for prefix in excluded_prefixes
+            ):
+                continue
+
+            if any(
+                marker in lowered
+                for marker in excluded_markers
+            ):
+                continue
+
+            filtered.append(normalized)
+
+        return filtered
+
+    def rank_models(
+        self,
+        models: Iterable[str],
+    ) -> Iterable[str]:
+        """Preserve the provider's discovery order.
+
+        RDAI does not hardcode a preferred OpenAI model as a fallback.
+        """
+
+        return models
+
+    def _client(self) -> Any:
+        """Create an authenticated OpenAI client."""
 
         try:
             from openai import OpenAI
@@ -72,7 +148,25 @@ class OpenAIProvider(BaseProvider):
                 "Please install the OpenAI SDK using: pip install openai"
             ) from exc
 
-        client = OpenAI(api_key=self.api_key)
+        if not self.is_available:
+            raise ValueError(
+                "OpenAI API key is missing."
+            )
+
+        return OpenAI(
+            api_key=self.api_key,
+        )
+
+    def generate(
+        self,
+        prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        """Generate a complete response using OpenAI chat completions."""
+
+        model = self.ensure_model()
+
+        client = self._client()
 
         response = client.chat.completions.create(
             model=model,
@@ -87,12 +181,62 @@ class OpenAIProvider(BaseProvider):
 
         try:
             content = response.choices[0].message.content
-        except (AttributeError, IndexError, TypeError) as exc:
+        except (
+            AttributeError,
+            IndexError,
+            TypeError,
+        ) as exc:
             raise RuntimeError(
                 "OpenAI returned an unexpected response format."
             ) from exc
 
         if content is None:
-            raise RuntimeError("OpenAI returned an empty response.")
+            raise RuntimeError(
+                "OpenAI returned an empty response."
+            )
 
         return str(content)
+
+    def stream(
+        self,
+        prompt: str,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        """Stream generated text chunks from OpenAI."""
+
+        model = self.ensure_model()
+
+        client = self._client()
+
+        # Streaming is controlled by this provider method rather than by
+        # exposing provider-specific flags to the public API.
+        kwargs = dict(kwargs)
+        kwargs.pop(
+            "stream",
+            None,
+        )
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            stream=True,
+            **kwargs,
+        )
+
+        for chunk in response:
+            try:
+                content = chunk.choices[0].delta.content
+            except (
+                AttributeError,
+                IndexError,
+                TypeError,
+            ):
+                continue
+
+            if content:
+                yield str(content)

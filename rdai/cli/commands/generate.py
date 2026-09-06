@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Iterable
+
 import typer
 from rich.console import Console
 from rich.panel import Panel
@@ -9,25 +11,55 @@ from rich.panel import Panel
 console = Console()
 
 
+def _print_stream(
+    chunks: Iterable[str],
+) -> None:
+    """Render streamed chunks progressively."""
+
+    for chunk in chunks:
+        console.print(
+            chunk,
+            end="",
+        )
+
+    console.print()
+
+
 def run_generate(
     prompt: str = typer.Argument(
         ...,
         help="The prompt to send through the rdai provider router.",
     ),
+    stream: bool = typer.Option(
+        False,
+        "--stream",
+        help="Stream the response as it is generated.",
+    ),
 ) -> None:
     """Generate a response through rdai's configured provider chain."""
 
-    # Import lazily so the rest of the CLI remains lightweight and keeps
-    # existing command startup behavior unchanged.
     from rdai import AI
 
     try:
         ai = AI()
-        response = ai.generate(prompt)
+
+        if stream:
+            _print_stream(
+                ai.stream(prompt)
+            )
+            return
+
+        response = ai.generate(
+            prompt
+        )
 
     except ValueError as error:
-        console.print(f"[red]❌ Invalid request:[/red] {error}")
-        raise typer.Exit(code=2) from error
+        console.print(
+            f"[red]❌ Invalid request:[/red] {error}"
+        )
+        raise typer.Exit(
+            code=2
+        ) from error
 
     except RuntimeError as error:
         console.print(
@@ -37,20 +69,24 @@ def run_generate(
                 border_style="red",
             )
         )
-        raise typer.Exit(code=1) from error
+        raise typer.Exit(
+            code=1
+        ) from error
 
     except Exception as error:
-        # Keep unexpected provider/runtime failures user-friendly in the CLI.
         console.print(
             Panel(
-                f"{error}",
+                str(error),
                 title="[bold red]Unexpected Error[/bold red]",
                 border_style="red",
             )
         )
-        raise typer.Exit(code=1) from error
+        raise typer.Exit(
+            code=1
+        ) from error
 
     console.print()
+
     console.print(
         Panel(
             response,
@@ -58,4 +94,5 @@ def run_generate(
             border_style="cyan",
         )
     )
+
     console.print()

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import Any, Optional
 
 from rdai.providers.base import BaseProvider
@@ -11,7 +11,7 @@ class GroqProvider(BaseProvider):
 
     Model selection is discovery-based unless the user explicitly supplies
     a model. Discovered candidates are restricted to models suitable for the
-    standard chat-completions path used by this adapter.
+    standard chat-completions API used by this adapter.
     """
 
     traits = (
@@ -42,14 +42,26 @@ class GroqProvider(BaseProvider):
             return ()
 
         try:
-            client = Groq(api_key=self.api_key)
+            client = Groq(
+                api_key=self.api_key,
+            )
+
             response = client.models.list()
 
             models: list[str] = []
 
-            for model in response.data:
-                model_id = getattr(model, "id", None)
-                is_active = getattr(model, "active", True)
+            for item in getattr(response, "data", ()):
+                model_id = getattr(
+                    item,
+                    "id",
+                    None,
+                )
+
+                is_active = getattr(
+                    item,
+                    "active",
+                    True,
+                )
 
                 if not (
                     isinstance(model_id, str)
@@ -58,32 +70,37 @@ class GroqProvider(BaseProvider):
                 ):
                     continue
 
-                models.append(model_id.strip())
+                models.append(
+                    model_id.strip()
+                )
 
             return tuple(models)
 
         except Exception:
-            # Discovery is best-effort.
             return ()
 
     def filter_models(
         self,
         models: Iterable[str],
     ) -> Iterable[str]:
-        """Keep models appropriate for standard text chat generation.
-
-        Groq exposes several categories through the same model catalog,
-        including Compound systems and specialized preview models. This
-        adapter uses the normal chat-completions path, so known non-chat
-        families are excluded by category rather than by individual model ID.
-        """
+        """Keep models suitable for standard text chat."""
 
         filtered: list[str] = []
 
         excluded_prefixes = (
             "canopylabs/orpheus",
             "meta-llama/llama-prompt-guard",
+            "meta-llama/prompt-guard",
             "groq/compound",
+        )
+
+        excluded_markers = (
+            "whisper",
+            "speech",
+            "tts",
+            "text-to-speech",
+            "transcribe",
+            "audio",
         )
 
         for model in models:
@@ -100,13 +117,9 @@ class GroqProvider(BaseProvider):
             ):
                 continue
 
-            # Audio/speech models are not valid for this text-chat adapter.
             if any(
                 marker in lowered
-                for marker in (
-                    "whisper",
-                    "speech",
-                )
+                for marker in excluded_markers
             ):
                 continue
 
@@ -118,50 +131,17 @@ class GroqProvider(BaseProvider):
         self,
         models: Iterable[str],
     ) -> Iterable[str]:
-        """Prefer production language models while preserving discovery order."""
+        """Preserve provider discovery order."""
 
-        candidates = list(models)
+        return models
 
-        preferred_markers = (
-            "llama",
-            "gpt-oss",
-            "qwen",
-            "kimi",
-        )
-
-        def score(model: str) -> tuple[int, int]:
-            lowered = model.lower()
-
-            preferred = any(
-                marker in lowered
-                for marker in preferred_markers
-            )
-
-            # Production/general language models should be preferred over
-            # other less obvious catalog entries.
-            return (
-                0 if preferred else 1,
-                candidates.index(model),
-            )
-
-        return sorted(
-            candidates,
-            key=score,
-        )
-
-    def generate(
-        self,
-        prompt: str,
-        **kwargs: Any,
-    ) -> str:
-        """Generate a response using Groq chat completions."""
+    def _client(self) -> Any:
+        """Create an authenticated Groq client."""
 
         if not self.is_available:
             raise ValueError(
                 "Groq API key is missing."
             )
-
-        model = self.ensure_model()
 
         try:
             from groq import Groq
@@ -170,8 +150,25 @@ class GroqProvider(BaseProvider):
                 "Please install the Groq SDK using: pip install groq"
             ) from exc
 
-        client = Groq(
+        return Groq(
             api_key=self.api_key,
+        )
+
+    def generate(
+        self,
+        prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        """Generate a complete response using Groq chat completions."""
+
+        model = self.ensure_model()
+
+        client = self._client()
+
+        request_kwargs = dict(kwargs)
+        request_kwargs.pop(
+            "stream",
+            None,
         )
 
         response = client.chat.completions.create(
@@ -182,7 +179,7 @@ class GroqProvider(BaseProvider):
                     "content": prompt,
                 }
             ],
-            **kwargs,
+            **request_kwargs,
         )
 
         try:
@@ -202,3 +199,45 @@ class GroqProvider(BaseProvider):
             )
 
         return str(content)
+
+    def stream(
+        self,
+        prompt: str,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        """Stream generated text chunks from Groq."""
+
+        model = self.ensure_model()
+
+        client = self._client()
+
+        request_kwargs = dict(kwargs)
+        request_kwargs.pop(
+            "stream",
+            None,
+        )
+
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            stream=True,
+            **request_kwargs,
+        )
+
+        for chunk in response:
+            try:
+                content = chunk.choices[0].delta.content
+            except (
+                AttributeError,
+                IndexError,
+                TypeError,
+            ):
+                continue
+
+            if content:
+                yield str(content)

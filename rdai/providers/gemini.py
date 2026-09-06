@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from typing import Any, Optional
 
 from google import genai
@@ -12,7 +12,8 @@ class GeminiProvider(BaseProvider):
     """Google Gemini provider using the google-genai SDK.
 
     Model selection is discovery-based unless the user explicitly supplies
-    a model.
+    a model. Discovered models are filtered using provider metadata when
+    available, rather than hardcoded model IDs.
     """
 
     traits = (
@@ -33,7 +34,9 @@ class GeminiProvider(BaseProvider):
         )
 
         self.client = (
-            genai.Client(api_key=self.api_key)
+            genai.Client(
+                api_key=self.api_key,
+            )
             if self.api_key
             else None
         )
@@ -41,10 +44,11 @@ class GeminiProvider(BaseProvider):
     @property
     def is_available(self) -> bool:
         """Return True when the Gemini client is configured."""
+
         return self.client is not None
 
     def available_models(self) -> tuple[str, ...]:
-        """Discover Gemini models exposed by the configured API key."""
+        """Discover models that support text generation."""
 
         if not self.is_available:
             return ()
@@ -72,6 +76,26 @@ class GeminiProvider(BaseProvider):
                 if model_name.startswith("models/"):
                     model_name = model_name[len("models/"):]
 
+                supported_actions = getattr(
+                    model,
+                    "supported_actions",
+                    None,
+                )
+
+                # Gemini exposes supported_actions for model capabilities.
+                # Only require the capability check when metadata exists;
+                # this keeps the adapter compatible with SDK objects that
+                # may omit the field.
+                if supported_actions is not None:
+                    actions = {
+                        str(action).strip().lower()
+                        for action in supported_actions
+                        if str(action).strip()
+                    }
+
+                    if "generatecontent" not in actions:
+                        continue
+
                 discovered.append(model_name)
 
             return tuple(discovered)
@@ -84,9 +108,22 @@ class GeminiProvider(BaseProvider):
         self,
         models: Iterable[str],
     ) -> Iterable[str]:
-        """Keep Gemini models suitable for standard text generation."""
+        """Remove clearly specialized non-text model families."""
 
         filtered: list[str] = []
+
+        excluded_markers = (
+            "embedding",
+            "image-generation",
+            "image_generation",
+            "tts",
+            "text-to-speech",
+            "text_to_speech",
+            "lyria",
+            "robotics",
+            "computer-use",
+            "computer_use",
+        )
 
         for model in models:
             normalized = model.strip()
@@ -95,22 +132,6 @@ class GeminiProvider(BaseProvider):
                 continue
 
             lowered = normalized.lower()
-
-            # The current RDAI adapter uses generateContent, so models that
-            # are clearly specialized for embeddings, image generation,
-            # robotics, TTS, or other non-text tasks should not be selected.
-            excluded_markers = (
-                "embedding",
-                "image",
-                "tts",
-                "lyria",
-                "robotics",
-                "computer-use",
-                "computer_use",
-                "deep-research",
-                "deep_research",
-                "antigravity",
-            )
 
             if any(
                 marker in lowered
@@ -126,50 +147,20 @@ class GeminiProvider(BaseProvider):
         self,
         models: Iterable[str],
     ) -> Iterable[str]:
-        """Prefer stable, general-purpose Flash models."""
+        """Preserve provider discovery order.
 
-        candidates = list(models)
+        Model capability metadata determines eligibility. RDAI deliberately
+        does not promote a hardcoded Gemini model family as a default.
+        """
 
-        preferred_markers = (
-            "gemini-3.8-flash",
-            "gemini-3.7-flash",
-            "gemini-3.6-flash",
-            "gemini-3.5-flash",
-            "gemini-3.1-flash-lite",
-            "gemini-2.5-flash",
-            "gemini-2.5-pro",
-        )
-
-        def score(model: str) -> tuple[int, int]:
-            lowered = model.lower()
-
-            for index, marker in enumerate(
-                preferred_markers
-            ):
-                if marker in lowered:
-                    return (
-                        index,
-                        candidates.index(model),
-                    )
-
-            # Unknown models remain usable candidates but are ranked after
-            # known general-purpose Gemini families.
-            return (
-                len(preferred_markers),
-                candidates.index(model),
-            )
-
-        return sorted(
-            candidates,
-            key=score,
-        )
+        return models
 
     def generate(
         self,
         prompt: str,
         **kwargs: Any,
     ) -> str:
-        """Generate a response using Gemini."""
+        """Generate a complete response using Gemini."""
 
         if not self.is_available:
             raise ValueError(
@@ -196,3 +187,33 @@ class GeminiProvider(BaseProvider):
             )
 
         return str(content)
+
+    def stream(
+        self,
+        prompt: str,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        """Stream generated text chunks from Gemini."""
+
+        if not self.is_available:
+            raise ValueError(
+                "Gemini API key is missing."
+            )
+
+        model = self.ensure_model()
+
+        stream = self.client.models.generate_content_stream(
+            model=model,
+            contents=prompt,
+            **kwargs,
+        )
+
+        for chunk in stream:
+            content = getattr(
+                chunk,
+                "text",
+                None,
+            )
+
+            if content:
+                yield str(content)

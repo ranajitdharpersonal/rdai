@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any, Optional
 
 from rdai.providers.base import BaseProvider
@@ -16,10 +16,17 @@ class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[str, BaseProvider] = {}
 
-    def register(self, provider: BaseProvider) -> None:
+    def register(
+        self,
+        provider: BaseProvider,
+    ) -> None:
         """Register a provider instance."""
 
-        name = getattr(provider, "name", None)
+        name = getattr(
+            provider,
+            "name",
+            None,
+        )
 
         if not name:
             name = provider.__class__.__name__.replace(
@@ -37,12 +44,17 @@ class ProviderRegistry:
         name: str,
     ) -> Optional[BaseProvider]:
         """Return a provider by canonical name."""
+
+        if not isinstance(name, str):
+            return None
+
         return self._providers.get(
             name.lower().strip()
         )
 
     def all_available(self) -> list[BaseProvider]:
-        """Return all currently configured providers."""
+        """Return all currently configured providers that are available."""
+
         return [
             provider
             for provider in self._providers.values()
@@ -91,8 +103,17 @@ class Router:
         strategy: str = "manual",
         priority: Sequence[str] | None = None,
     ) -> None:
+        if not isinstance(
+            strategy,
+            str,
+        ):
+            raise TypeError(
+                "strategy must be a string."
+            )
+
         self.registry = registry
         self.strategy = strategy.lower().strip()
+
         self.priority = [
             name.lower().strip()
             for name in (priority or [])
@@ -145,7 +166,7 @@ class Router:
         prompt: str,
         traits: Sequence[str] | None,
     ) -> list[BaseProvider]:
-        """Rank providers by requested traits, then preserve availability order."""
+        """Rank providers by requested traits."""
 
         available = self.registry.all_available()
 
@@ -338,7 +359,7 @@ class Failover:
         cls,
         error: Exception,
     ) -> bool:
-        """Return True for errors indicating model availability problems."""
+        """Return True for model availability/access errors."""
 
         status_code = cls._status_code(error)
 
@@ -347,19 +368,31 @@ class Failover:
 
         error_text = str(error).lower()
 
+        model_error_markers = (
+            "model not found",
+            "model_not_found",
+            "unknown model",
+            "invalid model",
+            "model does not exist",
+            "no such model",
+            "model is not available",
+            "model is unavailable",
+            "model unavailable",
+            "model_terms_required",
+            "model terms required",
+            "requires terms acceptance",
+            "terms acceptance",
+            "terms are required",
+            "do not have access to this model",
+            "don't have access to this model",
+            "model access denied",
+            "access denied for model",
+            "model access is denied",
+        )
+
         return any(
             marker in error_text
-            for marker in (
-                "model not found",
-                "model_not_found",
-                "unknown model",
-                "invalid model",
-                "model does not exist",
-                "no such model",
-                "model is not available",
-                "model is unavailable",
-                "model unavailable",
-            )
+            for marker in model_error_markers
         )
 
     @staticmethod
@@ -374,8 +407,13 @@ class Failover:
             None,
         )
 
-        if isinstance(requested_model, str):
-            return bool(requested_model.strip())
+        if isinstance(
+            requested_model,
+            str,
+        ):
+            return bool(
+                requested_model.strip()
+            )
 
         requested_model = getattr(
             provider,
@@ -384,7 +422,10 @@ class Failover:
         )
 
         return bool(
-            isinstance(requested_model, str)
+            isinstance(
+                requested_model,
+                str,
+            )
             and requested_model.strip()
         )
 
@@ -433,7 +474,7 @@ class Failover:
     def _reset_state(
         state: dict[str, float | int],
     ) -> None:
-        """Reset a provider circuit after successful generation."""
+        """Reset a provider circuit after successful generation/stream."""
 
         state["failures"] = 0
         state["last_failure"] = 0.0
@@ -454,12 +495,7 @@ class Failover:
         provider: BaseProvider,
         failed_model: Optional[str],
     ) -> bool:
-        """Refresh discovered models after a model-related generation failure.
-
-        Explicitly selected user models are never replaced.
-        Discovered models can be excluded so the next discovered candidate
-        gets a chance.
-        """
+        """Refresh discovered models after a model-related failure."""
 
         if self._has_explicit_model(provider):
             return False
@@ -483,18 +519,38 @@ class Failover:
             refreshed_model = refresh_model(
                 failed_model=failed_model,
             )
-        except TypeError:
-            # Backward compatibility for custom providers implementing the
-            # older no-argument refresh_model() method.
-            try:
-                refreshed_model = refresh_model()
-            except Exception as error:
+
+        except TypeError as error:
+            error_text = str(error).lower()
+
+            signature_markers = (
+                "unexpected keyword argument",
+                "positional argument",
+                "keyword-only argument",
+            )
+
+            if not any(
+                marker in error_text
+                for marker in signature_markers
+            ):
                 logger.warning(
                     "%s model refresh failed: %s",
                     provider.__class__.__name__,
                     error,
                 )
                 return False
+
+            try:
+                refreshed_model = refresh_model()
+
+            except Exception as refresh_error:
+                logger.warning(
+                    "%s model refresh failed: %s",
+                    provider.__class__.__name__,
+                    refresh_error,
+                )
+                return False
+
         except Exception as error:
             logger.warning(
                 "%s model refresh failed: %s",
@@ -502,6 +558,14 @@ class Failover:
                 error,
             )
             return False
+
+        if not isinstance(
+            refreshed_model,
+            str,
+        ):
+            return False
+
+        refreshed_model = refreshed_model.strip()
 
         if not refreshed_model:
             return False
@@ -542,18 +606,14 @@ class Failover:
                 None,
             )
 
-            logger.warning(
-                "%s failed because of model '%s': %s",
-                provider.__class__.__name__,
-                failed_model,
-                error,
-            )
-
             recovered = self._recover_model(
                 provider,
                 failed_model=(
                     failed_model
-                    if isinstance(failed_model, str)
+                    if isinstance(
+                        failed_model,
+                        str,
+                    )
                     else None
                 ),
             )
@@ -561,16 +621,79 @@ class Failover:
             if not recovered:
                 raise
 
-            logger.info(
-                "%s retrying with refreshed model '%s'.",
-                provider.__class__.__name__,
-                getattr(provider, "model", None),
-            )
-
             return provider.generate(
                 prompt,
                 **kwargs,
             )
+
+    def _stream_provider(
+        self,
+        provider: BaseProvider,
+        prompt: str,
+        kwargs: dict[str, Any],
+    ) -> Iterator[str]:
+        """Stream through one provider with one model-recovery retry.
+
+        A retry is safe only before any content has been emitted. Once a
+        partial response reaches the caller, restarting another provider would
+        duplicate or reorder content, so the error is surfaced instead.
+        """
+
+        emitted = False
+
+        def run_stream() -> Iterator[str]:
+            nonlocal emitted
+
+            try:
+                stream = provider.stream(
+                    prompt,
+                    **kwargs,
+                )
+
+                for chunk in stream:
+                    if chunk:
+                        emitted = True
+                        yield str(chunk)
+
+            except Exception as error:
+                if emitted:
+                    raise
+
+                if not self._is_model_error(error):
+                    raise
+
+                failed_model = getattr(
+                    provider,
+                    "model",
+                    None,
+                )
+
+                recovered = self._recover_model(
+                    provider,
+                    failed_model=(
+                        failed_model
+                        if isinstance(
+                            failed_model,
+                            str,
+                        )
+                        else None
+                    ),
+                )
+
+                if not recovered:
+                    raise
+
+                retry_stream = provider.stream(
+                    prompt,
+                    **kwargs,
+                )
+
+                for chunk in retry_stream:
+                    if chunk:
+                        emitted = True
+                        yield str(chunk)
+
+        yield from run_stream()
 
     def generate(
         self,
@@ -605,7 +728,6 @@ class Failover:
                 continue
 
             attempted_provider = True
-
             provider_name = provider.__class__.__name__
 
             try:
@@ -667,4 +789,110 @@ class Failover:
 
         raise RuntimeError(
             "🚨 No provider completed the request."
+        )
+
+    def stream(
+        self,
+        prompt: str,
+        traits: Sequence[str] | None = None,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        """Stream through the routed provider chain.
+
+        Failover may move to another provider when a provider fails before
+        emitting any content. Once content has been emitted, the partial
+        stream is not restarted to avoid duplicate output.
+        """
+
+        providers = self.router.get_route(
+            prompt,
+            traits=traits,
+        )
+
+        if not providers:
+            raise RuntimeError(
+                "🚨 No available AI providers to route "
+                "the request! Check your .env API keys."
+            )
+
+        last_transient_error: Optional[Exception] = None
+        attempted_provider = False
+
+        for provider in providers:
+            state = self._get_state(provider)
+
+            if not self._circuit_allows_request(state):
+                logger.info(
+                    "Circuit open for %s; skipping provider.",
+                    provider.__class__.__name__,
+                )
+                continue
+
+            attempted_provider = True
+            emitted = False
+
+            try:
+                for chunk in self._stream_provider(
+                    provider,
+                    prompt,
+                    kwargs,
+                ):
+                    if chunk:
+                        emitted = True
+                        yield chunk
+
+                self._reset_state(state)
+                return
+
+            except Exception as error:
+                if emitted:
+                    raise
+
+                if self._is_transient_error(error):
+                    last_transient_error = error
+
+                    self._record_failure(state)
+
+                    logger.warning(
+                        "%s stream failed before output: "
+                        "%s. Trying next provider.",
+                        provider.__class__.__name__,
+                        error,
+                    )
+
+                    continue
+
+                if self._is_model_error(error):
+                    logger.warning(
+                        "%s stream still rejected model '%s' "
+                        "after recovery attempt: %s",
+                        provider.__class__.__name__,
+                        getattr(provider, "model", None),
+                        error,
+                    )
+
+                    continue
+
+                logger.error(
+                    "%s stream failed with non-transient error: %s",
+                    provider.__class__.__name__,
+                    error,
+                )
+
+                raise
+
+        if not attempted_provider:
+            raise RuntimeError(
+                "🚨 All available providers are currently "
+                "behind an open circuit. Please retry shortly."
+            )
+
+        if last_transient_error is not None:
+            raise RuntimeError(
+                "🚨 All providers in the failover chain "
+                "failed with transient errors."
+            ) from last_transient_error
+
+        raise RuntimeError(
+            "🚨 No provider completed the streaming request."
         )

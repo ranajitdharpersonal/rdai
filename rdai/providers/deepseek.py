@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any, Optional
 
 import requests
@@ -10,8 +11,9 @@ from rdai.providers.base import BaseProvider
 class DeepseekProvider(BaseProvider):
     """DeepSeek provider adapter.
 
-    Model selection is discovery-based unless the user explicitly
-    supplies a model.
+    Model selection is discovery-based unless the user explicitly supplies
+    a model. Discovered models are filtered for compatibility with the
+    standard chat-completions path used by this adapter.
     """
 
     traits = (
@@ -21,7 +23,7 @@ class DeepseekProvider(BaseProvider):
     )
 
     models_endpoint = "https://api.deepseek.com/models"
-    chat_endpoint = "https://api.deepseek.com/v1/chat/completions"
+    chat_endpoint = "https://api.deepseek.com/chat/completions"
 
     def __init__(
         self,
@@ -70,26 +72,122 @@ class DeepseekProvider(BaseProvider):
 
                 model_id = item.get("id")
 
-                if isinstance(model_id, str) and model_id.strip():
-                    models.append(model_id.strip())
+                if not (
+                    isinstance(model_id, str)
+                    and model_id.strip()
+                ):
+                    continue
+
+                models.append(
+                    model_id.strip()
+                )
 
             return tuple(models)
 
         except Exception:
             return ()
 
-    def generate(self, prompt: str, **kwargs: Any) -> str:
-        """Generate a response using DeepSeek chat completions."""
+    def filter_models(
+        self,
+        models: tuple[str, ...] | list[str],
+    ) -> tuple[str, ...]:
+        """Keep models compatible with text chat generation.
+
+        Vision-capable models may still accept text, so they are not excluded
+        solely because their names contain "vision".
+        """
+
+        filtered: list[str] = []
+
+        excluded_markers = (
+            "embedding",
+            "moderation",
+            "reranker",
+            "whisper",
+            "tts",
+            "text-to-speech",
+            "audio",
+        )
+
+        for model in models:
+            normalized = model.strip()
+
+            if not normalized:
+                continue
+
+            lowered = normalized.lower()
+
+            if any(
+                marker in lowered
+                for marker in excluded_markers
+            ):
+                continue
+
+            filtered.append(normalized)
+
+        return tuple(filtered)
+
+    def rank_models(
+        self,
+        models: tuple[str, ...] | list[str],
+    ) -> tuple[str, ...]:
+        """Preserve DeepSeek's discovery order.
+
+        RDAI does not hardcode a preferred DeepSeek model.
+        """
+
+        return tuple(models)
+
+    @staticmethod
+    def _headers(api_key: str) -> dict[str, str]:
+        """Build authenticated DeepSeek API headers."""
+
+        return {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+    def _request_timeout(
+        self,
+        kwargs: dict[str, Any],
+    ) -> float:
+        """Extract an optional request timeout without leaking it upstream."""
+
+        timeout = kwargs.pop(
+            "timeout",
+            15.0,
+        )
+
+        if not isinstance(timeout, (int, float)):
+            raise TypeError(
+                "timeout must be an int or float."
+            )
+
+        if timeout <= 0:
+            raise ValueError(
+                "timeout must be greater than 0."
+            )
+
+        return float(timeout)
+
+    def generate(
+        self,
+        prompt: str,
+        **kwargs: Any,
+    ) -> str:
+        """Generate a complete response using DeepSeek chat completions."""
 
         if not self.is_available:
-            raise ValueError("DeepSeek API key is missing.")
+            raise ValueError(
+                "DeepSeek API key is missing."
+            )
 
         model = self.ensure_model()
 
-        headers = {
-            "Authorization": f"Bearer {self.api_key}",
-            "Content-Type": "application/json",
-        }
+        request_kwargs = dict(kwargs)
+        timeout = self._request_timeout(
+            request_kwargs,
+        )
 
         payload = {
             "model": model,
@@ -101,16 +199,15 @@ class DeepseekProvider(BaseProvider):
             ],
         }
 
-        timeout = kwargs.pop("timeout", 15.0)
-
-        payload.update(kwargs)
+        payload.update(request_kwargs)
 
         response = requests.post(
             self.chat_endpoint,
-            headers=headers,
+            headers=self._headers(self.api_key),
             json=payload,
             timeout=timeout,
         )
+
         response.raise_for_status()
 
         try:
@@ -132,3 +229,92 @@ class DeepseekProvider(BaseProvider):
             )
 
         return str(content)
+
+    def stream(
+        self,
+        prompt: str,
+        **kwargs: Any,
+    ) -> Iterator[str]:
+        """Stream text chunks from DeepSeek."""
+
+        if not self.is_available:
+            raise ValueError(
+                "DeepSeek API key is missing."
+            )
+
+        model = self.ensure_model()
+
+        request_kwargs = dict(kwargs)
+        timeout = self._request_timeout(
+            request_kwargs,
+        )
+
+        request_kwargs.pop(
+            "stream",
+            None,
+        )
+
+        payload = {
+            "model": model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt,
+                }
+            ],
+            "stream": True,
+        }
+
+        payload.update(request_kwargs)
+
+        response = requests.post(
+            self.chat_endpoint,
+            headers=self._headers(self.api_key),
+            json=payload,
+            timeout=timeout,
+            stream=True,
+        )
+
+        response.raise_for_status()
+
+        for line in response.iter_lines(
+            decode_unicode=True,
+        ):
+            if not line:
+                continue
+
+            if isinstance(line, bytes):
+                line = line.decode(
+                    "utf-8",
+                    errors="replace",
+                )
+
+            if not line.startswith("data:"):
+                continue
+
+            data = line[5:].strip()
+
+            if data == "[DONE]":
+                break
+
+            try:
+                chunk = requests.models.complexjson.loads(data)
+            except (
+                ValueError,
+                TypeError,
+            ):
+                continue
+
+            try:
+                content = chunk["choices"][0]["delta"].get(
+                    "content"
+                )
+            except (
+                KeyError,
+                IndexError,
+                TypeError,
+            ):
+                continue
+
+            if content:
+                yield str(content)
