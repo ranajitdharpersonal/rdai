@@ -231,7 +231,7 @@ Example:
 
 ```yaml
 strategy: smart
-provider_order:
+providers:
   - gemini
   - openai
   - groq
